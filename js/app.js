@@ -5,7 +5,7 @@ import { addDays, rangeLabel, shortDate, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
 import { drawFitness, drawLoad, drawVolume, drawZones } from './charts.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
-import { EXPLAIN, dataNotes, summarySentences } from './text.js';
+import { EXPLAIN, change, dataNotes, fmt, formState, previousName, signed, summarySentences } from './text.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -59,7 +59,7 @@ async function load({ force = false } = {}) {
 
 function setBusy(busy) {
   $('refresh').disabled = busy;
-  $('refresh').textContent = busy ? 'Loading…' : 'Refresh';
+  $('refresh').querySelector('span').textContent = busy ? 'Loading…' : 'Refresh';
   if (busy && !state.data) $('summary-text').textContent = 'Loading your training from intervals.icu…';
 }
 
@@ -111,6 +111,100 @@ function renderSummary(m) {
   $('summary-title').textContent = `${m.sport.label} · ${rangeLabel(m.range.from, m.range.to)}`;
   $('summary-text').textContent = summarySentences(m).join(' ');
   $('notes').replaceChildren(...dataNotes(m).map((n) => Object.assign(document.createElement('li'), { textContent: n })));
+  renderTiles(m);
+  renderGauge(m);
+}
+
+// Headline numbers, each against the previous period. Deltas stay neutral in colour:
+// more training isn't automatically better.
+function renderTiles(m) {
+  const t = m.totals;
+  const p = m.prevTotals;
+  const delta = (cur, prev) => {
+    const c = change(cur, prev);
+    if (!c) return 'nothing to compare';
+    if (c === 'level') return 'level with before';
+    const [dir, pct] = c.split(' ');
+    return `<span class="arrow">${dir === 'up' ? '▲' : '▼'}</span>${pct} vs before`;
+  };
+  const tiles = [
+    [m.sport.noun[1][0].toUpperCase() + m.sport.noun[1].slice(1), fmt(t.sessions), '', delta(t.sessions, p.sessions)],
+    ['Distance', fmt(t.distanceKm), 'km', delta(t.distanceKm, p.distanceKm)],
+    ['Time', fmt(t.hours, 1), 'h', delta(t.hours, p.hours)],
+    ['Load', fmt(t.load), '', delta(t.load, p.load)],
+  ];
+  if (t.easyShare != null) {
+    const pts = p.easyShare != null ? Math.round((t.easyShare - p.easyShare) * 100) : null;
+    tiles.push([
+      'Easy time (Z1–Z2)',
+      fmt(t.easyShare * 100),
+      '%',
+      pts == null ? 'nothing to compare' : pts === 0 ? 'level with before' : `<span class="arrow">${pts > 0 ? '▲' : '▼'}</span>${Math.abs(pts)} pts vs before`,
+    ]);
+  }
+  // Only numbers and fixed labels go into this markup.
+  $('tiles').innerHTML = tiles
+    .map(([label, value, unit, d]) => `
+      <div class="tile">
+        <div class="tile-label">${label}</div>
+        <div class="tile-value">${value}${unit ? `<small>${unit}</small>` : ''}</div>
+        <div class="tile-delta">${d}</div>
+      </div>`)
+    .join('');
+}
+
+// Where today's form sits, on intervals.icu's bands.
+const FORM_BANDS = [
+  { from: -45, to: -30, name: 'High fatigue', color: '--state-risk' },
+  { from: -30, to: -10, name: 'Productive', color: '--state-productive' },
+  { from: -10, to: 5, name: 'Neutral', color: '--state-neutral' },
+  { from: 5, to: 25, name: 'Fresh', color: '--state-fresh' },
+  { from: 25, to: 40, name: 'Very fresh', color: '--state-transition' },
+];
+
+function renderGauge(m) {
+  const last = m.fitness[m.fitness.length - 1];
+  $('form-gauge').hidden = !last || !m.totals.sessions;
+  if (!last) return;
+  const min = FORM_BANDS[0].from;
+  const max = FORM_BANDS[FORM_BANDS.length - 1].to;
+  const pos = (v) => ((Math.min(max, Math.max(min, v)) - min) / (max - min)) * 100;
+
+  $('gauge-track').style.background = `linear-gradient(to right, ${FORM_BANDS.map(
+    (b) => `color-mix(in oklab, var(${b.color}) 45%, var(--surface)) ${pos(b.from)}% ${pos(b.to)}%`,
+  ).join(', ')})`;
+  $('gauge-marker').style.left = `${pos(last.form)}%`;
+  $('gauge-value').innerHTML = `${signed(last.form)} <span class="state">· ${formState(last.form)}</span>`;
+  $('gauge-scale').innerHTML = [
+    ...FORM_BANDS.map((b) => `<span class="band-name" style="left:${pos((b.from + b.to) / 2)}%">${b.name}</span>`),
+    ...FORM_BANDS.slice(1).map((b) => `<span class="tick" style="left:${pos(b.from)}%">${signed(b.from)}</span>`),
+  ].join('');
+  $('form-gauge').title = EXPLAIN.form;
+}
+
+// One line under each chart title that says what the chart shows.
+function renderTakeaways(m) {
+  const t = m.totals;
+  const weeks = m.range.days / 7;
+  const c = change(t.load, m.prevTotals.load);
+  $('take-load').innerHTML = t.sessions
+    ? `<strong>${fmt(t.load)}</strong> in total${c ? `, ${c} on ${previousName(m.range)}` : ''}`
+    : '';
+  $('take-volume').innerHTML = !t.sessions
+    ? ''
+    : state.measure === 'distance'
+      ? `<strong>${fmt(t.distanceKm)} km</strong>, about ${fmt(t.distanceKm / weeks)} km a week`
+      : `<strong>${fmt(t.hours, 1)} h</strong>, about ${fmt(t.hours / weeks, 1)} h a week`;
+  const pace = m.sport.hasPaceZones && state.zone === 'pace';
+  const secs = pace ? t.paceSecs : t.hrSecs;
+  const total = pace ? t.paceTotalSecs : t.hrTotalSecs;
+  $('take-zones').innerHTML = total
+    ? `<strong>${fmt((((secs[0] || 0) + (secs[1] || 0)) / total) * 100)}%</strong> of ${pace ? 'running' : 'training'} time easy (Z1–Z2)`
+    : '';
+  const last = m.fitness[m.fitness.length - 1];
+  $('take-fitness').innerHTML = last
+    ? `Fitness <strong>${fmt(last.fitness)}</strong> · Fatigue <strong>${fmt(last.fatigue)}</strong> · Form <strong>${signed(last.form)}</strong>`
+    : '';
 }
 
 function legend(el, items) {
@@ -135,6 +229,8 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 
 function renderCharts(m) {
   if (!window.Chart) return; // Chart.js still loading; render() runs again once it has
+
+  renderTakeaways(m);
 
   $('info-load').dataset.tip = EXPLAIN.load;
   drawLoad(m);
@@ -293,6 +389,7 @@ for (const b of document.querySelectorAll('[data-zone]')) {
     state.zone = b.dataset.zone;
     syncControls();
     renderZones(state.model);
+    renderTakeaways(state.model);
   });
 }
 

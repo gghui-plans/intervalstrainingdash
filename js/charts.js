@@ -189,6 +189,32 @@ export function drawZones(m, kind) {
   return Array.from({ length: n }, (_, i) => ({ label: zoneLabel(zones, i), color: t.zone(i, n) }));
 }
 
+function withAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// Shades form between −10 and −30, where training is productive, behind the lines.
+function formBand(t) {
+  return {
+    id: 'formBand',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { y } } = chart;
+      const top = Math.max(a.top, y.getPixelForValue(-10));
+      const bottom = Math.min(a.bottom, y.getPixelForValue(-30));
+      if (bottom <= top) return;
+      ctx.save();
+      ctx.fillStyle = withAlpha(css('--state-productive'), 0.09);
+      ctx.fillRect(a.left, top, a.right - a.left, bottom - top);
+      ctx.fillStyle = t.muted;
+      ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Productive form', a.left + 6, top + 5);
+      ctx.restore();
+    },
+  };
+}
+
 export function drawFitness(m) {
   const t = theme();
   const line = (label, key, color, extra = {}) => ({
@@ -215,14 +241,22 @@ export function drawFitness(m) {
     type: 'line',
     data: {
       labels: m.fitness.map((p) => shortDate(p.date)),
-      datasets: series.map((s) => line(s.label, s.key, s.color)),
+      datasets: series.map((s, i) =>
+        line(s.label, s.key, s.color, i === 0 ? { fill: 'origin', backgroundColor: withAlpha(s.color, 0.1) } : {}),
+      ),
     },
+    plugins: [formBand(t)],
     options: {
       ...base(t),
       scales: {
         ...base(t).scales,
         x: { ...base(t).scales.x, ticks: { ...base(t).scales.x.ticks, maxTicksLimit: 6 } },
-        y: { ...base(t).scales.y, beginAtZero: false, grid: { color: (c) => (c.tick.value === 0 ? css('--baseline') : t.grid) } },
+        y: {
+          ...base(t).scales.y,
+          beginAtZero: false,
+          suggestedMin: -30, // keep the productive band in view
+          grid: { color: (c) => (c.tick.value === 0 ? css('--baseline') : t.grid) },
+        },
       },
       plugins: {
         ...base(t).plugins,

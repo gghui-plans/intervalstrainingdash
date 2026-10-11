@@ -11,11 +11,23 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Training Dashboard</h1>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill="var(--accent)"/>
+        <path d="M6 18h5l3-8 4 13 3-7h5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1>Training Dashboard</h1>
+    </div>
     <div class="topbar-actions" id="topbar-actions" hidden>
       <span class="updated" id="updated"></span>
-      <button type="button" class="btn btn-quiet" id="refresh">Refresh</button>
-      <button type="button" class="btn btn-quiet" id="open-settings">Settings</button>
+      <button type="button" class="btn btn-quiet btn-icon" id="refresh">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Refresh</span>
+      </button>
+      <button type="button" class="btn btn-quiet btn-icon" id="open-settings">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z M16.2 11.6l1.3 1-1.6 2.8-1.6-.6a6 6 0 0 1-1.7 1l-.2 1.7H9.2L9 15.8a6 6 0 0 1-1.7-1l-1.6.6-1.6-2.8 1.3-1a6 6 0 0 1 0-2l-1.3-1 1.6-2.8 1.6.6a6 6 0 0 1 1.7-1L9.2 2.2h3.2l.2 1.7a6 6 0 0 1 1.7 1l1.6-.6 1.6 2.8-1.3 1a6 6 0 0 1 0 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span>Settings</span>
+      </button>
     </div>
   </header>
 
@@ -42,8 +54,14 @@
     <section class="dashboard" id="dashboard" hidden>
       <div class="controls">
         <div class="segmented sport-toggle" role="radiogroup" aria-label="Sport">
-          <button type="button" role="radio" data-sport="running" aria-checked="true">Running</button>
-          <button type="button" role="radio" data-sport="paddling" aria-checked="false">Paddling</button>
+          <button type="button" role="radio" data-sport="running" aria-checked="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="14.5" cy="4.5" r="2"/><path d="M8 21l3-6 3 2.5V22M6 12l2.5-4 4.5-.5 2.5 4 3.5 1.5M13 7.5L11 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Running
+          </button>
+          <button type="button" role="radio" data-sport="paddling" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3.5c1.6-1 3.8.9 3 2.8l-1.6 1.6c-1 .8-2.4.5-3-.4l-.9-.9c-.9-.6-1.1-2-.4-3ZM7 20.5c-1.6 1-3.8-.9-3-2.8l1.6-1.6c1-.8 2.4-.5 3 .4l.9.9c.9.6 1.1 2 .4 3Z"/></svg>
+            Paddling
+          </button>
         </div>
         <div class="range">
           <div class="segmented" role="radiogroup" aria-label="Date range" id="range-presets">
@@ -64,6 +82,17 @@
       <section class="summary" aria-live="polite">
         <h2 id="summary-title">Summary</h2>
         <p id="summary-text" class="summary-text"></p>
+        <div class="tiles" id="tiles"></div>
+        <div class="form-gauge" id="form-gauge" hidden>
+          <div class="gauge-head">
+            <span class="gauge-label">Form today</span>
+            <span class="gauge-value" id="gauge-value"></span>
+          </div>
+          <div class="gauge-track" id="gauge-track">
+            <span class="gauge-marker" id="gauge-marker"></span>
+          </div>
+          <div class="gauge-scale" id="gauge-scale"></div>
+        </div>
         <ul id="notes" class="notes"></ul>
       </section>
 
@@ -73,6 +102,7 @@
             <h3>Training load per week</h3>
             <button type="button" class="info" id="info-load" aria-label="About training load">i</button>
           </header>
+          <p class="takeaway" id="take-load"></p>
           <div class="legend" id="legend-load"></div>
           <div class="chart"><canvas id="chart-load" role="img" aria-label="Training load per week"></canvas></div>
         </article>
@@ -85,6 +115,7 @@
               <button type="button" role="radio" data-measure="hours" aria-checked="false">hours</button>
             </div>
           </header>
+          <p class="takeaway" id="take-volume"></p>
           <div class="chart"><canvas id="chart-volume" role="img" aria-label="Distance per week"></canvas></div>
         </article>
 
@@ -96,6 +127,7 @@
               <button type="button" role="radio" data-zone="pace" aria-checked="false">Pace</button>
             </div>
           </header>
+          <p class="takeaway" id="take-zones"></p>
           <div class="legend" id="legend-zones"></div>
           <div class="chart"><canvas id="chart-zones" role="img" aria-label="Time in zones per week"></canvas>
             <p class="empty" id="zones-empty" hidden></p>
@@ -106,6 +138,7 @@
           <header class="card-head">
             <h3>Fitness, fatigue and form</h3>
           </header>
+          <p class="takeaway" id="take-fitness"></p>
           <div class="legend" id="legend-fitness"></div>
           <div class="chart"><canvas id="chart-fitness" role="img" aria-label="Fitness, fatigue and form over time"></canvas></div>
         </article>
@@ -113,12 +146,26 @@
       <p class="footnote" id="footnote"></p>
 
       <section class="export">
-        <h2>Export for your coach</h2>
-        <p>The report carries the same numbers and words as this page, with a coaching prompt on top. Paste it into Claude.</p>
+        <div class="export-head">
+          <svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5Z M8 8h8M8 11.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div>
+            <h2>Export for your coach</h2>
+            <p>The same numbers and words as this page, with a coaching prompt on top. Paste it into Claude.</p>
+          </div>
+        </div>
         <div class="export-buttons">
-          <button type="button" class="btn btn-primary" id="copy-report">Copy report</button>
-          <button type="button" class="btn btn-primary" id="download-md">Download report</button>
-          <button type="button" class="btn btn-primary" id="download-json">Download data</button>
+          <button type="button" class="btn btn-primary btn-icon" id="copy-report">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Copy report</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-icon" id="download-md">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Download report</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-icon" id="download-json">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3.5c-1.5 0-2 .8-2 2v2.2c0 1-.6 1.6-1.5 1.8v1c.9.2 1.5.8 1.5 1.8v2.2c0 1.2.5 2 2 2M13 3.5c1.5 0 2 .8 2 2v2.2c0 1 .6 1.6 1.5 1.8v1c-.9.2-1.5.8-1.5 1.8v2.2c0 1.2-.5 2-2 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Download data</span>
+          </button>
         </div>
         <details class="preview">
           <summary>Preview the report</summary>
