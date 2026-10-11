@@ -1,9 +1,9 @@
 // Page wiring: controls, loading, rendering and export.
 
 import { DEFAULT_WEEKS, SPORTS } from './config.js';
-import { addDays, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
+import { addDays, longDay, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
-import { drawFitness, drawLoad, drawVolume, drawZones } from './charts.js';
+import { drawFitness, drawLoad, drawLoadLine, drawVolume, drawVolumeLine, drawZones } from './charts.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
 import { EXPLAIN, change, dataNotes, fmt, formState, periodName, signed, summary } from './text.js';
 import * as store from './store.js';
@@ -16,6 +16,7 @@ const state = {
   sport: prefs.sport || null, // null until we know which sport the athlete has
   weeks: prefs.weeks || DEFAULT_WEEKS, // a number, or 'custom'
   weekStart: prefs.weekStart ?? 1, // 1 Monday, 0 Sunday
+  compare: prefs.compare ?? true, // off: load and volume become daily lines
   customFrom: prefs.customFrom || addDays(today(), -27),
   customTo: prefs.customTo || today(),
   measure: 'distance',
@@ -99,6 +100,7 @@ function syncControls() {
   for (const b of document.querySelectorAll('[data-zone]')) b.setAttribute('aria-checked', b.dataset.zone === state.zone);
   $('custom-range').hidden = state.weeks !== 'custom';
   $('week-start').hidden = state.weeks !== 1;
+  $('compare-toggle').checked = state.compare;
   for (const b of document.querySelectorAll('[data-weekstart]')) b.setAttribute('aria-checked', Number(b.dataset.weekstart) === state.weekStart);
   $('custom-from').value = state.customFrom;
   $('custom-to').value = state.customTo;
@@ -204,7 +206,17 @@ function renderTakeaways(m) {
     ? periodName(m.range).toLowerCase()
     : `over ${m.range.days % 7 === 0 && weeks > 1 ? `${weeks} weeks` : `${m.range.days} days`}`;
   const c = change(t.load, m.prevTotals.load);
-  if (m.grain === 'day') {
+  if (!state.compare) {
+    // Daily lines: give the period total and invite dragging for any day.
+    $('take-load').innerHTML = t.sessions
+      ? `<strong>${fmt(t.load)}</strong> ${span} · drag along the line for any day`
+      : '';
+    $('take-volume').innerHTML = !t.sessions
+      ? ''
+      : state.measure === 'distance'
+        ? `<strong>${fmt(t.distanceKm, 1)} km</strong> ${span}`
+        : `<strong>${fmt(t.allHours, 1)} h</strong> all sports ${span} · ${fmt(t.hours, 1)} h of it ${sport}`;
+  } else if (m.grain === 'day') {
     // A short range is about its total against the period before; the bars give the days.
     const cd = change(t.distanceKm, m.prevTotals.distanceKm);
     const ch = change(t.allHours, m.prevTotals.allHours);
@@ -269,29 +281,66 @@ function renderCharts(m) {
 
   renderTakeaways(m);
 
-  const daily = m.grain === 'day';
-  const per = daily ? 'per day' : 'per week';
+  // With comparison off, load and volume become daily lines you can drag along.
+  const lines = !state.compare;
+  const per = lines || m.grain === 'day' ? 'per day' : 'per week';
   $('load-title').textContent = `Training load ${per}`;
-  $('zones-title').textContent = `Time in zones ${per}`;
+  $('zones-title').textContent = `Time in zones ${m.grain === 'day' ? 'per day' : 'per week'}`;
   $('volume-title').textContent = state.measure === 'distance' ? `Distance ${per}` : `Training time ${per}`;
-
   $('info-load').dataset.tip = EXPLAIN.load;
-  drawLoad(m);
-  legend($('legend-load'), [
-    { label: m.range.calendar ? 'This week' : 'This period', color: cssVar('--series-1') },
-    { label: daily ? (m.range.calendar ? 'Last week' : m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
-  ]);
 
-  legend($('legend-volume'), drawVolume(m, state.measure));
+  if (lines) {
+    drawLoadLine(m, (i) => scrubLoad(m, i));
+    legend($('legend-load'), []);
+    legend($('legend-volume'), drawVolumeLine(m, state.measure, (i) => scrubVolume(m, i)));
+  } else {
+    const daily = m.grain === 'day';
+    drawLoad(m);
+    legend($('legend-load'), [
+      { label: m.range.calendar ? 'This week' : 'This period', color: cssVar('--series-1') },
+      { label: daily ? (m.range.calendar ? 'Last week' : m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
+    ]);
+    legend($('legend-volume'), drawVolume(m, state.measure));
+  }
 
   renderZones(m);
 
-  const series = drawFitness(m);
+  const series = drawFitness(m, lines ? (i) => scrubFitness(m, i) : null);
   legend($('legend-fitness'), series.map((s) => ({ label: s.label, color: s.color, line: true, tip: s.explain })));
 
-  $('footnote').textContent = m.weeks.some((w) => w.partial)
+  $('footnote').textContent = !lines && m.weeks.some((w) => w.partial)
     ? `* The first bar covers ${m.weeks[0].days} days; weeks are counted back from ${shortDate(m.range.to)}.`
     : '';
+}
+
+// ---------- Drag readouts (comparison off) ----------
+// Each puts the dragged-to day's value where the chart's headline sits, and
+// restores the period figure when the finger lifts or the pointer leaves.
+
+function scrubLoad(m, i) {
+  const d = i == null ? null : m.days[i];
+  if (!d) return renderTakeaways(m);
+  $('take-load').innerHTML = d.future
+    ? `${longDay(d.date)}: still to come`
+    : `<strong>${fmt(d.load)}</strong> on ${longDay(d.date)} · ${d.sessions ? `${d.sessions} ${m.sport.noun[d.sessions === 1 ? 0 : 1]}` : `no ${m.sport.noun[1]}`}`;
+}
+
+function scrubVolume(m, i) {
+  const d = i == null ? null : m.days[i];
+  if (!d) return renderTakeaways(m);
+  const day = longDay(d.date);
+  $('take-volume').innerHTML = d.future
+    ? `${day}: still to come`
+    : state.measure === 'distance'
+      ? `<strong>${fmt(d.distanceKm, 1)} km</strong> on ${day}`
+      : `<strong>${fmt(d.allHours, 1)} h</strong> all sports on ${day} · ${fmt(d.hours, 1)} h ${m.sport.label.toLowerCase()}`;
+}
+
+function scrubFitness(m, i) {
+  const p = i == null ? null : m.fitness[i];
+  if (!p) return renderTakeaways(m);
+  $('take-fitness').innerHTML =
+    `${longDay(p.date)}: Fitness <strong>${fmt(p.fitness)}</strong> · Fatigue <strong>${fmt(p.fatigue)}</strong> · Form <strong>${signed(p.form)}</strong>`;
 }
 
 function renderZones(m) {
@@ -403,6 +452,12 @@ for (const b of document.querySelectorAll('[data-weeks]')) {
     load();
   });
 }
+
+$('compare-toggle').addEventListener('change', (e) => {
+  state.compare = e.target.checked;
+  store.setPrefs({ compare: state.compare });
+  if (state.model) renderCharts(state.model);
+});
 
 for (const b of document.querySelectorAll('[data-weekstart]')) {
   b.addEventListener('click', () => {

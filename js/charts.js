@@ -232,7 +232,119 @@ function formBand(t) {
   };
 }
 
-export function drawFitness(m) {
+// ---------- Line mode (comparison off) ----------
+
+// Follows a finger or pointer along a line chart: draws a marker at the nearest day
+// and reports its index (null when the pointer leaves or the finger lifts).
+const SCRUB_EVENTS = ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove', 'touchend'];
+
+function scrubber(onScrub) {
+  return {
+    id: 'scrubber',
+    afterEvent(chart, args) {
+      const e = args.event;
+      let i = null;
+      if (e.type !== 'mouseout' && e.type !== 'touchend') {
+        const hits = chart.getElementsAtEventForMode(e, 'index', { intersect: false }, false);
+        if (!hits.length) return;
+        i = hits[0].index;
+      }
+      if (i === chart.$scrub) return;
+      chart.$scrub = i;
+      onScrub(i);
+      args.changed = true;
+    },
+    afterDatasetsDraw(chart) {
+      const i = chart.$scrub;
+      const anchor = i == null ? null : chart.getDatasetMeta(0).data[i];
+      if (!anchor) return;
+      const { ctx, chartArea: a } = chart;
+      ctx.save();
+      ctx.strokeStyle = css('--text-3');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(anchor.x, a.top);
+      ctx.lineTo(anchor.x, a.bottom);
+      ctx.stroke();
+      chart.data.datasets.forEach((ds, k) => {
+        const p = chart.getDatasetMeta(k).data[i];
+        if (!p || ds.data[i] == null || chart.getDatasetMeta(k).hidden) return;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = ds.borderColor;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = css('--surface');
+        ctx.stroke();
+      });
+      ctx.restore();
+    },
+  };
+}
+
+function lineSet(label, data, color, extra = {}) {
+  return {
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: color,
+    borderWidth: 2,
+    pointRadius: 0,
+    pointHoverRadius: 0, // the scrubber draws the marker
+    cubicInterpolationMode: 'monotone', // smooth without dipping below zero on rest days
+    borderCapStyle: 'round',
+    borderJoinStyle: 'round',
+    ...extra,
+  };
+}
+
+function lineOptions(t, yTitle = '') {
+  const b = base(t, { yTitle });
+  return {
+    ...b,
+    events: SCRUB_EVENTS,
+    scales: { ...b.scales, x: { ...b.scales.x, ticks: { ...b.scales.x.ticks, maxTicksLimit: 6 } } },
+    plugins: { ...b.plugins, tooltip: { enabled: false } }, // the headline above the chart shows the value
+  };
+}
+
+// Days still to come in a calendar week are left off the line.
+const daily = (m, key, dp = 1) => m.days.map((d) => (d.future ? null : +d[key].toFixed(dp)));
+const dayLabels = (m) => m.days.map((d) => (m.grain === 'day' ? dayLabel(d.date) : shortDate(d.date)));
+
+export function drawLoadLine(m, onScrub) {
+  const t = theme();
+  draw('chart-load', {
+    type: 'line',
+    data: {
+      labels: dayLabels(m),
+      datasets: [lineSet('Load', daily(m, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })],
+    },
+    plugins: [scrubber(onScrub)],
+    options: lineOptions(t),
+  });
+}
+
+export function drawVolumeLine(m, measure, onScrub) {
+  const t = theme();
+  const isKm = measure === 'distance';
+  const datasets = isKm
+    ? [lineSet('Distance', daily(m, 'distanceKm'), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })]
+    : [
+        lineSet(m.sport.label, daily(m, 'hours', 2), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) }),
+        lineSet('All sports', daily(m, 'allHours', 2), t.text),
+      ];
+  draw('chart-volume', {
+    type: 'line',
+    data: { labels: dayLabels(m), datasets },
+    plugins: [scrubber(onScrub)],
+    options: lineOptions(t, isKm ? 'km' : 'hours'),
+  });
+  return isKm ? [] : [{ label: m.sport.label, color: t.s1, line: true }, { label: 'All sports', color: t.text, line: true }];
+}
+
+// onScrub is passed when comparison is off, so fitness reads out like the other lines.
+export function drawFitness(m, onScrub = null) {
   const t = theme();
   const line = (label, key, color, extra = {}) => ({
     label,
@@ -241,7 +353,7 @@ export function drawFitness(m) {
     backgroundColor: color,
     borderWidth: 2,
     pointRadius: 0,
-    pointHoverRadius: 5,
+    pointHoverRadius: onScrub ? 0 : 5, // the scrubber draws its own marker
     pointHoverBorderColor: t.surface,
     pointHoverBorderWidth: 2,
     tension: 0.25,
@@ -262,9 +374,10 @@ export function drawFitness(m) {
         line(s.label, s.key, s.color, i === 0 ? { fill: 'origin', backgroundColor: withAlpha(s.color, 0.1) } : {}),
       ),
     },
-    plugins: [formBand(t)],
+    plugins: onScrub ? [formBand(t), scrubber(onScrub)] : [formBand(t)],
     options: {
       ...base(t),
+      ...(onScrub ? { events: SCRUB_EVENTS } : {}),
       scales: {
         ...base(t).scales,
         x: { ...base(t).scales.x, ticks: { ...base(t).scales.x.ticks, maxTicksLimit: 6 } },
@@ -277,12 +390,14 @@ export function drawFitness(m) {
       },
       plugins: {
         ...base(t).plugins,
-        tooltip: {
-          ...base(t).plugins.tooltip,
-          callbacks: {
-            label: (c) => ` ${c.dataset.label}: ${c.datasetIndex === 2 ? signed(c.raw) : fmt(c.raw)}`,
-          },
-        },
+        tooltip: onScrub
+          ? { enabled: false }
+          : {
+              ...base(t).plugins.tooltip,
+              callbacks: {
+                label: (c) => ` ${c.dataset.label}: ${c.datasetIndex === 2 ? signed(c.raw) : fmt(c.raw)}`,
+              },
+            },
       },
     },
   });

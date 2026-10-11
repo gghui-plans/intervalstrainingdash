@@ -405,3 +405,21 @@ body {
   .controls .week-start .segmented { display: inline-flex; }
   .controls .week-start .segmented button { flex: none; padding-left: 14px; padding-right: 14px; }
 }
+
+/* Compare switch */
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-2); cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch-track {
+  position: relative; width: 36px; height: 20px; border-radius: 999px; flex: none;
+  background: var(--baseline); transition: background 0.15s;
+}
+.switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s;
+}
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:checked + .switch-track::after { transform: translateX(16px); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Line charts are dragged sideways; let the page still scroll vertically */
+.chart canvas { touch-action: pan-y; }
