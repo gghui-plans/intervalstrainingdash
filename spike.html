@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Spike</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f9f9f7; --fg: #0b0b0b; --muted: #52514e; --box: #f0efec; --ok: #006300; --bad: #d03b3b; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #0d0d0d; --fg: #fff; --muted: #c3c2b7; --box: #1a1a19; --ok: #0ca30c; --bad: #e66767; }
+    }
+    :root[data-theme="dark"] { --bg: #0d0d0d; --fg: #fff; --muted: #c3c2b7; --box: #1a1a19; --ok: #0ca30c; --bad: #e66767; }
+    body { background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 960px; padding: 16px; }
+    form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+    input, button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid #8884; }
+    pre { background: var(--box); padding: 12px; border-radius: 8px; overflow: auto; max-height: 360px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    table { border-collapse: collapse; font-size: 13px; } td, th { padding: 2px 10px 2px 0; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Day-one spike: intervals.icu from the browser</h1>
+  <p>Calls the API directly from this page to confirm CORS, auth and the field names the dashboard relies on. The key is used only for these requests and is not saved by this page.</p>
+  <form id="f">
+    <label>Athlete ID <input name="id" placeholder="i12345" required></label>
+    <label>API key <input name="key" type="password" required></label>
+    <button>Run checks</button>
+  </form>
+  <div id="out"></div>
+
+  <script>
+    const API = 'https://intervals.icu/api/v1';
+    const out = document.getElementById('out');
+    const iso = (d) => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); // local date
+    const newest = iso(new Date());
+    const oldest = iso(new Date(Date.now() - 7 * 864e5));
+
+    // Prefill from the dashboard if it has saved credentials in this browser.
+    try {
+      const c = JSON.parse(localStorage.getItem('tdash.creds'));
+      if (c) { f.id.value = c.athleteId; f.key.value = c.apiKey; }
+    } catch {}
+
+    const add = (html) => out.insertAdjacentHTML('beforeend', html);
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+    async function call(label, path, auth) {
+      add(`<h2>${esc(label)}</h2>`);
+      try {
+        const res = await fetch(API + path, { headers: { Authorization: auth } });
+        const body = await res.text();
+        add(`<p class="${res.ok ? 'ok' : 'bad'}">HTTP ${res.status} — CORS ${res.type === 'cors' || res.ok ? 'OK' : res.type}</p>`);
+        let json = null;
+        try { json = JSON.parse(body); } catch {}
+        add(`<pre>${esc(json ? JSON.stringify(json, null, 2).slice(0, 20000) : body.slice(0, 4000))}</pre>`);
+        return json;
+      } catch (e) {
+        add(`<p class="bad">Request failed before a response arrived: ${esc(e.message)}. This is what a CORS block looks like (check the browser console). If so, the Cloudflare Worker proxy is needed.</p>`);
+        return null;
+      }
+    }
+
+    function fieldCheck(title, obj, fields) {
+      if (!obj) return;
+      const rows = fields.map((k) => `<tr><td><code>${k}</code></td><td class="${obj[k] != null ? 'ok' : 'bad'}">${obj[k] != null ? esc(JSON.stringify(obj[k]).slice(0, 80)) : 'missing'}</td></tr>`);
+      add(`<h3>${esc(title)}</h3><table>${rows.join('')}</table>`);
+    }
+
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      out.replaceChildren();
+      const id = encodeURIComponent(f.id.value.trim());
+      const auth = 'Basic ' + btoa('API_KEY:' + f.key.value.trim());
+
+      const athlete = await call('Athlete and sport settings', `/athlete/${id}`, auth);
+      for (const s of athlete?.sportSettings || []) {
+        fieldCheck(`Sport settings: ${(s.types || []).join(', ')}`, s, ['hr_zones', 'hr_zone_names', 'lthr', 'max_hr', 'pace_zones', 'pace_zone_names', 'threshold_pace', 'pace_units']);
+      }
+      const acts = await call(`Activities ${oldest} to ${newest}`, `/athlete/${id}/activities?oldest=${oldest}&newest=${newest}`, auth);
+      for (const a of (acts || []).slice(0, 3)) {
+        fieldCheck(`Activity: ${a.name || a.id}`, a, ['type', 'start_date_local', 'distance', 'moving_time', 'icu_training_load', 'icu_hr_zone_times', 'pace_zone_times', 'average_heartrate', 'icu_ctl', 'icu_atl', 'source', '_note']);
+      }
+      const well = await call('Wellness (fitness/fatigue)', `/athlete/${id}/wellness?oldest=${oldest}&newest=${newest}`, auth);
+      if (well?.length) fieldCheck(`Wellness ${well[well.length - 1].id}`, well[well.length - 1], ['ctl', 'atl']);
+      await call('Planned workouts (calendar)', `/athlete/${id}/events?oldest=${oldest}&newest=${newest}&category=WORKOUT`, auth);
+    });
+  </script>
+</body>
+</html>

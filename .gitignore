@@ -1,0 +1,9 @@
+# Planning notes stay local
+Training Dashboard — Project Brief.md
+
+# Editor and OS clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.claude/
+node_modules/

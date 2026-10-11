@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Dashboard</title>
+  <meta name="description" content="A plain-language view of your intervals.icu running and paddling training, with a report to paste into Claude.">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Training Dashboard</h1>
+    <div class="topbar-actions" id="topbar-actions" hidden>
+      <span class="updated" id="updated"></span>
+      <button type="button" class="btn btn-quiet" id="refresh">Refresh</button>
+      <button type="button" class="btn btn-quiet" id="open-settings">Settings</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- First run -->
+    <section class="onboarding" id="onboarding" hidden>
+      <h2>Connect intervals.icu</h2>
+      <p class="lede">This page reads your training from intervals.icu and turns it into a plain-language summary, four charts and a report you can paste into Claude for coaching.</p>
+      <ol class="steps">
+        <li>Sign in to <a href="https://intervals.icu/settings" target="_blank" rel="noopener">intervals.icu</a> and open <strong>Settings</strong>.</li>
+        <li>Scroll to <strong>Developer Settings</strong>. Copy your <strong>Athlete ID</strong> (it looks like <code>i12345</code>) and your <strong>API Key</strong> (click <em>View</em>, or generate one if there is none).</li>
+        <li>Paste both below.</li>
+      </ol>
+      <form class="creds-form" id="onboarding-form">
+        <label>Athlete ID <input name="athleteId" autocomplete="off" spellcheck="false" placeholder="i12345" required></label>
+        <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required></label>
+        <button type="submit" class="btn btn-primary">Connect</button>
+      </form>
+      <p class="privacy"><strong>Privacy.</strong> Your key is stored only in this browser and is sent only to intervals.icu. There is no server behind this page; nothing about you is stored anywhere else. Clear it any time from Settings.</p>
+      <p class="hint">Charts depend on your intervals.icu settings: heart-rate zones for each sport, and threshold pace for running.</p>
+    </section>
+
+    <!-- Dashboard -->
+    <section class="dashboard" id="dashboard" hidden>
+      <div class="controls">
+        <div class="segmented sport-toggle" role="radiogroup" aria-label="Sport">
+          <button type="button" role="radio" data-sport="running" aria-checked="true">Running</button>
+          <button type="button" role="radio" data-sport="paddling" aria-checked="false">Paddling</button>
+        </div>
+        <div class="range">
+          <div class="segmented" role="radiogroup" aria-label="Date range" id="range-presets">
+            <button type="button" role="radio" data-weeks="4">4 wk</button>
+            <button type="button" role="radio" data-weeks="8">8 wk</button>
+            <button type="button" role="radio" data-weeks="12">12 wk</button>
+            <button type="button" role="radio" data-weeks="custom">Custom</button>
+          </div>
+          <div class="custom-range" id="custom-range" hidden>
+            <label>From <input type="date" id="custom-from"></label>
+            <label>To <input type="date" id="custom-to"></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="notice" id="notice" role="alert" hidden></div>
+
+      <section class="summary" aria-live="polite">
+        <h2 id="summary-title">Summary</h2>
+        <p id="summary-text" class="summary-text"></p>
+        <ul id="notes" class="notes"></ul>
+      </section>
+
+      <div class="grid">
+        <article class="card">
+          <header class="card-head">
+            <h3>Training load per week</h3>
+            <button type="button" class="info" id="info-load" aria-label="About training load">i</button>
+          </header>
+          <div class="legend" id="legend-load"></div>
+          <div class="chart"><canvas id="chart-load" role="img" aria-label="Training load per week"></canvas></div>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <h3 id="volume-title">Distance per week</h3>
+            <div class="segmented small" role="radiogroup" aria-label="Measure" id="volume-toggle">
+              <button type="button" role="radio" data-measure="distance" aria-checked="true">km</button>
+              <button type="button" role="radio" data-measure="hours" aria-checked="false">hours</button>
+            </div>
+          </header>
+          <div class="chart"><canvas id="chart-volume" role="img" aria-label="Distance per week"></canvas></div>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <h3>Time in zones per week</h3>
+            <div class="segmented small" role="radiogroup" aria-label="Zone type" id="zone-toggle">
+              <button type="button" role="radio" data-zone="hr" aria-checked="true">Heart rate</button>
+              <button type="button" role="radio" data-zone="pace" aria-checked="false">Pace</button>
+            </div>
+          </header>
+          <div class="legend" id="legend-zones"></div>
+          <div class="chart"><canvas id="chart-zones" role="img" aria-label="Time in zones per week"></canvas>
+            <p class="empty" id="zones-empty" hidden></p>
+          </div>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <h3>Fitness, fatigue and form</h3>
+          </header>
+          <div class="legend" id="legend-fitness"></div>
+          <div class="chart"><canvas id="chart-fitness" role="img" aria-label="Fitness, fatigue and form over time"></canvas></div>
+        </article>
+      </div>
+      <p class="footnote" id="footnote"></p>
+
+      <section class="export">
+        <h2>Export for your coach</h2>
+        <p>The report carries the same numbers and words as this page, with a coaching prompt on top. Paste it into Claude.</p>
+        <div class="export-buttons">
+          <button type="button" class="btn btn-primary" id="copy-report">Copy report</button>
+          <button type="button" class="btn btn-primary" id="download-md">Download report</button>
+          <button type="button" class="btn btn-primary" id="download-json">Download data</button>
+        </div>
+        <details class="preview">
+          <summary>Preview the report</summary>
+          <pre id="report-preview"></pre>
+        </details>
+      </section>
+    </section>
+  </main>
+
+  <dialog class="settings" id="settings">
+    <form class="creds-form" id="settings-form" method="dialog">
+      <h2>Settings</h2>
+      <label>Athlete ID <input name="athleteId" autocomplete="off" spellcheck="false" placeholder="i12345" required></label>
+      <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required></label>
+      <p class="privacy">Stored only in this browser and sent only to intervals.icu.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-danger" id="clear-data">Forget key and data</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="cancel-settings">Cancel</button>
+        <button type="submit" class="btn btn-primary" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
