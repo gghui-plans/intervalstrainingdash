@@ -98,6 +98,8 @@ function syncControls() {
   for (const b of document.querySelectorAll('[data-measure]')) b.setAttribute('aria-checked', b.dataset.measure === state.measure);
   for (const b of document.querySelectorAll('[data-zone]')) b.setAttribute('aria-checked', b.dataset.zone === state.zone);
   $('custom-range').hidden = state.weeks !== 'custom';
+  $('week-start').hidden = state.weeks !== 1;
+  for (const b of document.querySelectorAll('[data-weekstart]')) b.setAttribute('aria-checked', Number(b.dataset.weekstart) === state.weekStart);
   $('custom-from').value = state.customFrom;
   $('custom-to').value = state.customTo;
   $('custom-from').max = $('custom-to').max = today();
@@ -398,6 +400,14 @@ for (const b of document.querySelectorAll('[data-weeks]')) {
   b.addEventListener('click', () => {
     state.weeks = b.dataset.weeks === 'custom' ? 'custom' : Number(b.dataset.weeks);
     store.setPrefs({ weeks: state.weeks });
+    load();
+  });
+}
+
+for (const b of document.querySelectorAll('[data-weekstart]')) {
+  b.addEventListener('click', () => {
+    state.weekStart = Number(b.dataset.weekstart);
+    store.setPrefs({ weekStart: state.weekStart });
     load();
   });
 }
