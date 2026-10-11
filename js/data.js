@@ -168,22 +168,6 @@ export function buildModel(data, sportKey, range) {
     .map((w) => ({ ...w, future: w.from > range.to }));
   const prevWeeks = blocks(prev.from, prevChartTo).map(withAll(within(inSport, { from: prev.from, to: prevChartTo })));
 
-  // One entry per day, for the line charts shown when comparison is off.
-  const byDay = {};
-  for (const a of current) (byDay[dateOf(a)] ||= []).push(a);
-  const days = eachDay(range.from, chartTo).map((d) => {
-    const list = byDay[d] || [];
-    return {
-      date: d,
-      future: d > range.to,
-      sessions: list.length,
-      load: list.reduce((s, a) => s + (a.icu_training_load || 0), 0),
-      distanceKm: list.reduce((s, a) => s + (a.distance || 0) / 1000, 0),
-      hours: list.reduce((s, a) => s + (a.moving_time || 0) / 3600, 0),
-      allHours: allHours({ from: d, to: d }),
-    };
-  });
-
   const fitnessAll = fitnessSeries(inSport, data.from, range.to);
   const fitness = fitnessAll.filter((p) => p.date >= range.from);
   const fitnessAtPrevEnd = fitnessAll.find((p) => p.date === prev.to) || null;
@@ -207,7 +191,6 @@ export function buildModel(data, sportKey, range) {
   return {
     sportKey,
     grain,
-    days,
     sport,
     range: { ...range, days: daysBetween(range.from, range.to) + 1 },
     prev,

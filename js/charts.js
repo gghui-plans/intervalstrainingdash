@@ -289,7 +289,10 @@ function lineSet(label, data, color, extra = {}) {
     borderColor: color,
     backgroundColor: color,
     borderWidth: 2,
-    pointRadius: 0,
+    pointRadius: 4, // one dot per week (or day) so the points are easy to find
+    pointBackgroundColor: color,
+    pointBorderColor: css('--surface'),
+    pointBorderWidth: 2,
     pointHoverRadius: 0, // the scrubber draws the marker
     cubicInterpolationMode: 'monotone', // smooth without dipping below zero on rest days
     borderCapStyle: 'round',
@@ -308,17 +311,17 @@ function lineOptions(t, yTitle = '') {
   };
 }
 
+// The lines use the same points as the bars: weeks, or days for short ranges.
 // Days still to come in a calendar week are left off the line.
-const daily = (m, key, dp = 1) => m.days.map((d) => (d.future ? null : +d[key].toFixed(dp)));
-const dayLabels = (m) => m.days.map((d) => (m.grain === 'day' ? dayLabel(d.date) : shortDate(d.date)));
+const points = (m, key, dp = 1) => m.weeks.map((w) => (w.future ? null : +w[key].toFixed(dp)));
 
 export function drawLoadLine(m, onScrub) {
   const t = theme();
   draw('chart-load', {
     type: 'line',
     data: {
-      labels: dayLabels(m),
-      datasets: [lineSet('Load', daily(m, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })],
+      labels: m.weeks.map(barLabel(m)),
+      datasets: [lineSet('Load', points(m, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })],
     },
     plugins: [scrubber(onScrub)],
     options: lineOptions(t),
@@ -329,14 +332,14 @@ export function drawVolumeLine(m, measure, onScrub) {
   const t = theme();
   const isKm = measure === 'distance';
   const datasets = isKm
-    ? [lineSet('Distance', daily(m, 'distanceKm'), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })]
+    ? [lineSet('Distance', points(m, 'distanceKm'), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })]
     : [
-        lineSet(m.sport.label, daily(m, 'hours', 2), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) }),
-        lineSet('All sports', daily(m, 'allHours', 2), t.text),
+        lineSet(m.sport.label, points(m, 'hours', 2), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) }),
+        lineSet('All sports', points(m, 'allHours', 2), t.text),
       ];
   draw('chart-volume', {
     type: 'line',
-    data: { labels: dayLabels(m), datasets },
+    data: { labels: m.weeks.map(barLabel(m)), datasets },
     plugins: [scrubber(onScrub)],
     options: lineOptions(t, isKm ? 'km' : 'hours'),
   });

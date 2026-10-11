@@ -16,7 +16,7 @@ const state = {
   sport: prefs.sport || null, // null until we know which sport the athlete has
   weeks: prefs.weeks || DEFAULT_WEEKS, // a number, or 'custom'
   weekStart: prefs.weekStart ?? 1, // 1 Monday, 0 Sunday
-  compare: prefs.compare ?? true, // off: load and volume become daily lines
+  compare: prefs.compare ?? true, // off: load and volume become draggable lines
   customFrom: prefs.customFrom || addDays(today(), -27),
   customTo: prefs.customTo || today(),
   measure: 'distance',
@@ -205,21 +205,13 @@ function renderTakeaways(m) {
   const span = m.range.calendar
     ? periodName(m.range).toLowerCase()
     : `over ${m.range.days % 7 === 0 && weeks > 1 ? `${weeks} weeks` : `${m.range.days} days`}`;
-  const c = change(t.load, m.prevTotals.load);
-  if (!state.compare) {
-    // Daily lines: give the period total and invite dragging for any day.
-    $('take-load').innerHTML = t.sessions
-      ? `<strong>${fmt(t.load)}</strong> ${span} · drag along the line for any day`
-      : '';
-    $('take-volume').innerHTML = !t.sessions
-      ? ''
-      : state.measure === 'distance'
-        ? `<strong>${fmt(t.distanceKm, 1)} km</strong> ${span}`
-        : `<strong>${fmt(t.allHours, 1)} h</strong> all sports ${span} · ${fmt(t.hours, 1)} h of it ${sport}`;
-  } else if (m.grain === 'day') {
+  // With comparison off the headlines drop the change against the period before.
+  const vs = (cur, prev) => (state.compare ? change(cur, prev) : null);
+  const c = vs(t.load, m.prevTotals.load);
+  if (m.grain === 'day') {
     // A short range is about its total against the period before; the bars give the days.
-    const cd = change(t.distanceKm, m.prevTotals.distanceKm);
-    const ch = change(t.allHours, m.prevTotals.allHours);
+    const cd = vs(t.distanceKm, m.prevTotals.distanceKm);
+    const ch = vs(t.allHours, m.prevTotals.allHours);
     $('take-load').innerHTML = t.sessions ? `<strong>${fmt(t.load)}</strong> ${span}${c ? ` (${c})` : ''}` : '';
     $('take-volume').innerHTML = !t.sessions
       ? ''
@@ -236,6 +228,9 @@ function renderTakeaways(m) {
       : state.measure === 'distance'
         ? `<strong>${fmt(t.distanceKm / weeks)} km</strong> a week on average · ${fmt(t.distanceKm)} km ${span}`
         : `<strong>${fmt(t.allHours / weeks, 1)} h</strong> a week on average, all sports · ${fmt(t.hours / weeks, 1)} h of it ${sport}`;
+  }
+  if (!state.compare && t.sessions) {
+    $('take-load').innerHTML += ` · drag along the line for any ${m.grain === 'day' ? 'day' : 'week'}`;
   }
   const pace = m.sport.hasPaceZones && state.zone === 'pace';
   const secs = pace ? t.paceSecs : t.hrSecs;
@@ -281,9 +276,9 @@ function renderCharts(m) {
 
   renderTakeaways(m);
 
-  // With comparison off, load and volume become daily lines you can drag along.
+  // With comparison off, load and volume become lines (same points as the bars) you can drag along.
   const lines = !state.compare;
-  const per = lines || m.grain === 'day' ? 'per day' : 'per week';
+  const per = m.grain === 'day' ? 'per day' : 'per week';
   $('load-title').textContent = `Training load ${per}`;
   $('zones-title').textContent = `Time in zones ${m.grain === 'day' ? 'per day' : 'per week'}`;
   $('volume-title').textContent = state.measure === 'distance' ? `Distance ${per}` : `Training time ${per}`;
@@ -317,23 +312,28 @@ function renderCharts(m) {
 // Each puts the dragged-to day's value where the chart's headline sits, and
 // restores the period figure when the finger lifts or the pointer leaves.
 
+// The point being dragged: "in the week of Sep 20" or "on Mon Oct 5".
+function pointName(m, w) {
+  if (m.grain === 'day') return `on ${longDay(w.from)}`;
+  return `in the week of ${shortDate(w.from)}${w.partial ? ` (${w.days} days)` : ''}`;
+}
+
 function scrubLoad(m, i) {
-  const d = i == null ? null : m.days[i];
-  if (!d) return renderTakeaways(m);
-  $('take-load').innerHTML = d.future
-    ? `${longDay(d.date)}: still to come`
-    : `<strong>${fmt(d.load)}</strong> on ${longDay(d.date)} · ${d.sessions ? `${d.sessions} ${m.sport.noun[d.sessions === 1 ? 0 : 1]}` : `no ${m.sport.noun[1]}`}`;
+  const w = i == null ? null : m.weeks[i];
+  if (!w) return renderTakeaways(m);
+  $('take-load').innerHTML = w.future
+    ? `${longDay(w.from)}: still to come`
+    : `<strong>${fmt(w.load)}</strong> ${pointName(m, w)} · ${w.sessions ? `${w.sessions} ${m.sport.noun[w.sessions === 1 ? 0 : 1]}` : `no ${m.sport.noun[1]}`}`;
 }
 
 function scrubVolume(m, i) {
-  const d = i == null ? null : m.days[i];
-  if (!d) return renderTakeaways(m);
-  const day = longDay(d.date);
-  $('take-volume').innerHTML = d.future
-    ? `${day}: still to come`
+  const w = i == null ? null : m.weeks[i];
+  if (!w) return renderTakeaways(m);
+  $('take-volume').innerHTML = w.future
+    ? `${longDay(w.from)}: still to come`
     : state.measure === 'distance'
-      ? `<strong>${fmt(d.distanceKm, 1)} km</strong> on ${day}`
-      : `<strong>${fmt(d.allHours, 1)} h</strong> all sports on ${day} · ${fmt(d.hours, 1)} h ${m.sport.label.toLowerCase()}`;
+      ? `<strong>${fmt(w.distanceKm, 1)} km</strong> ${pointName(m, w)}`
+      : `<strong>${fmt(w.allHours, 1)} h</strong> all sports ${pointName(m, w)} · ${fmt(w.hours, 1)} h ${m.sport.label.toLowerCase()}`;
 }
 
 function scrubFitness(m, i) {
