@@ -78,6 +78,7 @@ export function buildMarkdown(m, athleteName) {
     [sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), fmt(t.sessions), fmt(p.sessions), signed(t.sessions - p.sessions)],
     ['Distance', `${fmt(t.distanceKm, 1)} km`, `${fmt(p.distanceKm, 1)} km`, change(t.distanceKm, p.distanceKm) || '–'],
     ['Time', `${fmt(t.hours, 1)} h`, `${fmt(p.hours, 1)} h`, change(t.hours, p.hours) || '–'],
+    ['Time, all sports', `${fmt(t.allHours, 1)} h`, `${fmt(p.allHours, 1)} h`, change(t.allHours, p.allHours) || '–'],
     ['Load', fmt(t.load), fmt(p.load), change(t.load, p.load) || '–'],
   ];
   if (t.easyShare != null || p.easyShare != null) {
@@ -96,12 +97,13 @@ export function buildMarkdown(m, athleteName) {
   out.push('## Week by week', '');
   out.push(
     table(
-      ['Week starting', sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), 'Distance (km)', 'Time (h)', 'Load', ...zoneHead],
+      ['Week starting', sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), 'Distance (km)', 'Time (h)', 'All sports (h)', 'Load', ...zoneHead],
       m.weeks.map((w) => [
         shortDate(w.from) + (w.partial ? ` (${w.days} days)` : ''),
         fmt(w.sessions),
         fmt(w.distanceKm, 1),
         fmt(w.hours, 1),
+        fmt(w.allHours, 1),
         fmt(w.load),
         ...zoneHead.map((_, i) => pct(w.hrSecs[i] || 0, w.hrTotalSecs)),
       ]),

@@ -147,8 +147,14 @@ export function buildModel(data, sportKey, range) {
   const zones = zoneInfo(settingsFor(data.athlete.sportSettings, sport), sport, [...current, ...before]);
   const counts = { hr: zones.hr.count, pace: zones.pace.count };
 
-  const weeks = weekBlocks(range.from, range.to).map((w) => ({ ...w, ...rollup(within(current, w), counts) }));
-  const prevWeeks = weekBlocks(prev.from, prev.to).map((w) => ({ ...w, ...rollup(within(before, w), counts) }));
+  // Total training time across every sport, as context for the selected one.
+  // Strava placeholders carry no time, so they're left out.
+  const everything = data.activities.filter((a) => !a._note);
+  const allHours = (r) => within(everything, r).reduce((s, a) => s + (a.moving_time || 0) / 3600, 0);
+  const withAll = (list) => (w) => ({ ...w, ...rollup(within(list, w), counts), allHours: allHours(w) });
+
+  const weeks = weekBlocks(range.from, range.to).map(withAll(current));
+  const prevWeeks = weekBlocks(prev.from, prev.to).map(withAll(before));
 
   const fitnessAll = fitnessSeries(inSport, data.from, range.to);
   const fitness = fitnessAll.filter((p) => p.date >= range.from);
@@ -177,8 +183,8 @@ export function buildModel(data, sportKey, range) {
     prev,
     weeks,
     prevWeeks,
-    totals: rollup(current, counts),
-    prevTotals: rollup(before, counts),
+    totals: { ...rollup(current, counts), allHours: allHours(range) },
+    prevTotals: { ...rollup(before, counts), allHours: allHours(prev) },
     fitness,
     fitnessAtPrevEnd,
     allSports: lastWellness && {

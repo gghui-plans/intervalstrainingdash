@@ -17,6 +17,7 @@ function theme() {
     s2: css('--series-2'),
     s3: css('--series-3'),
     prev: css('--series-prev'),
+    other: css('--series-other'),
     zone: (i, n) => css(`--zone-${zoneStep(i, n)}`),
   };
 }
@@ -116,33 +117,47 @@ export function drawLoad(m) {
   });
 }
 
+// Distance is per sport only. Time stacks the selected sport on the other sports,
+// so the full bar is total training time.
 export function drawVolume(m, measure) {
   const t = theme();
   const isKm = measure === 'distance';
-  const value = (w) => (isKm ? +w.distanceKm.toFixed(1) : +w.hours.toFixed(1));
+  const sportName = m.sport.label;
+  const other = (w) => Math.max(0, w.allHours - w.hours);
+  const datasets = isKm
+    ? [{ label: 'Distance', data: m.weeks.map((w) => +w.distanceKm.toFixed(1)), ...bar(t.s1) }]
+    : [
+        {
+          label: sportName,
+          data: m.weeks.map((w) => +w.hours.toFixed(2)),
+          ...bar(t.s1, { borderRadius: 0, borderColor: t.surface, borderWidth: { top: 2 } }),
+        },
+        { label: 'Other sports', data: m.weeks.map((w) => +other(w).toFixed(2)), ...bar(t.other) },
+      ];
   draw('chart-volume', {
     type: 'bar',
-    data: {
-      labels: m.weeks.map(weekLabel),
-      datasets: [{ label: isKm ? 'Distance' : 'Time', data: m.weeks.map(value), ...bar(t.s1) }],
-    },
+    data: { labels: m.weeks.map(weekLabel), datasets },
     options: {
-      ...base(t, { yTitle: isKm ? 'km' : 'hours' }),
+      ...base(t, { stacked: !isKm, yTitle: isKm ? 'km' : 'hours' }),
       plugins: {
         ...base(t).plugins,
         tooltip: {
           ...base(t).plugins.tooltip,
+          itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
           callbacks: {
             title: (items) => `Week of ${shortDate(m.weeks[items[0].dataIndex].from)}`,
             label: (c) => {
               const w = m.weeks[c.dataIndex];
-              return ` ${isKm ? fmt(w.distanceKm, 1) + ' km' : fmt(w.hours, 1) + ' h'} · ${w.sessions} ${m.sport.noun[w.sessions === 1 ? 0 : 1]}`;
+              if (isKm) return ` ${fmt(w.distanceKm, 1)} km · ${w.sessions} ${m.sport.noun[w.sessions === 1 ? 0 : 1]}`;
+              return c.datasetIndex === 0 ? ` ${sportName}: ${fmt(w.hours, 1)} h` : ` Other sports: ${fmt(other(w), 1)} h`;
             },
+            footer: (items) => (isKm ? '' : `All sports: ${fmt(m.weeks[items[0].dataIndex].allHours, 1)} h`),
           },
         },
       },
     },
   });
+  return isKm ? [] : [{ label: sportName, color: t.s1 }, { label: 'Other sports', color: t.other }];
 }
 
 export function drawZones(m, kind) {

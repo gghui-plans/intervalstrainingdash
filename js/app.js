@@ -134,7 +134,8 @@ function renderTiles(m) {
   const tiles = [
     [m.sport.noun[1][0].toUpperCase() + m.sport.noun[1].slice(1), fmt(t.sessions), '', delta(t.sessions, p.sessions)],
     ['Distance', fmt(t.distanceKm), 'km', delta(t.distanceKm, p.distanceKm)],
-    ['Time', fmt(t.hours, 1), 'h', delta(t.hours, p.hours)],
+    [`${m.sport.label} time`, fmt(t.hours, 1), 'h', delta(t.hours, p.hours)],
+    ['All sports time', fmt(t.allHours, 1), 'h', delta(t.allHours, p.allHours)],
     ['Load', fmt(t.load), '', delta(t.load, p.load)],
   ];
   if (t.easyShare != null) {
@@ -200,7 +201,7 @@ function renderTakeaways(m) {
     ? ''
     : state.measure === 'distance'
       ? `<strong>${fmt(t.distanceKm / weeks)} km</strong> a week on average · ${fmt(t.distanceKm)} km ${span}`
-      : `<strong>${fmt(t.hours / weeks, 1)} h</strong> a week on average · ${fmt(t.hours, 1)} h ${span}`;
+      : `<strong>${fmt(t.allHours / weeks, 1)} h</strong> a week on average, all sports · ${fmt(t.hours / weeks, 1)} h of it ${m.sport.label.toLowerCase()}`;
   const pace = m.sport.hasPaceZones && state.zone === 'pace';
   const secs = pace ? t.paceSecs : t.hrSecs;
   const total = pace ? t.paceTotalSecs : t.hrTotalSecs;
@@ -252,8 +253,8 @@ function renderCharts(m) {
     { label: 'Previous period, same week', color: cssVar('--series-prev') },
   ]);
 
-  $('volume-title').textContent = state.measure === 'distance' ? 'Distance per week' : 'Time per week';
-  drawVolume(m, state.measure);
+  $('volume-title').textContent = state.measure === 'distance' ? 'Distance per week' : 'Training time per week';
+  legend($('legend-volume'), drawVolume(m, state.measure));
 
   renderZones(m);
 
