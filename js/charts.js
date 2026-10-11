@@ -311,35 +311,42 @@ function lineOptions(t, yTitle = '') {
   };
 }
 
-// The lines use the same points as the bars: weeks, or days for short ranges.
-// Days still to come in a calendar week are left off the line.
-const points = (m, key, dp = 1) => m.weeks.map((w) => (w.future ? null : +w[key].toFixed(dp)));
+// The lines plot a list of points: m.weeks (the same points as the bars) or m.days.
+// Days still to come in a calendar week are left off the line. Long daily lines
+// drop the per-point dots, which would crowd together.
+const values = (list, key, dp = 1) => list.map((w) => (w.future ? null : +w[key].toFixed(dp)));
+const lineLabels = (m, list) =>
+  list.map((w) => (w.days === 1 && m.grain === 'week' ? shortDate(w.from) : barLabel(m)(w)));
+const dots = (list) => ({ pointRadius: list.length > 16 ? 0 : 4 });
 
-export function drawLoadLine(m, onScrub) {
+export function drawLoadLine(m, list, onScrub) {
   const t = theme();
   draw('chart-load', {
     type: 'line',
     data: {
-      labels: m.weeks.map(barLabel(m)),
-      datasets: [lineSet('Load', points(m, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })],
+      labels: lineLabels(m, list),
+      datasets: [
+        lineSet('Load', values(list, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1), ...dots(list) }),
+      ],
     },
     plugins: [scrubber(onScrub)],
     options: lineOptions(t),
   });
 }
 
-export function drawVolumeLine(m, measure, onScrub) {
+export function drawVolumeLine(m, list, measure, onScrub) {
   const t = theme();
   const isKm = measure === 'distance';
+  const fill = { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1), ...dots(list) };
   const datasets = isKm
-    ? [lineSet('Distance', points(m, 'distanceKm'), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) })]
+    ? [lineSet('Distance', values(list, 'distanceKm'), t.s1, fill)]
     : [
-        lineSet(m.sport.label, points(m, 'hours', 2), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1) }),
-        lineSet('All sports', points(m, 'allHours', 2), t.text),
+        lineSet(m.sport.label, values(list, 'hours', 2), t.s1, fill),
+        lineSet('All sports', values(list, 'allHours', 2), t.text, dots(list)),
       ];
   draw('chart-volume', {
     type: 'line',
-    data: { labels: m.weeks.map(barLabel(m)), datasets },
+    data: { labels: lineLabels(m, list), datasets },
     plugins: [scrubber(onScrub)],
     options: lineOptions(t, isKm ? 'km' : 'hours'),
   });

@@ -17,6 +17,7 @@ const state = {
   weeks: prefs.weeks || DEFAULT_WEEKS, // a number, or 'custom'
   weekStart: prefs.weekStart ?? 1, // 1 Monday, 0 Sunday
   compare: prefs.compare ?? true, // off: load and volume become draggable lines
+  lineUnit: prefs.lineUnit || 'week', // what the lines plot and dragging reads: 'week' or 'day'
   customFrom: prefs.customFrom || addDays(today(), -27),
   customTo: prefs.customTo || today(),
   measure: 'distance',
@@ -101,6 +102,9 @@ function syncControls() {
   $('custom-range').hidden = state.weeks !== 'custom';
   $('week-start').hidden = state.weeks !== 1;
   $('compare-toggle').checked = state.compare;
+  const unitShown = !state.compare && state.model?.grain !== 'day';
+  $('line-unit').hidden = !unitShown;
+  for (const b of document.querySelectorAll('[data-lineunit]')) b.setAttribute('aria-checked', b.dataset.lineunit === state.lineUnit);
   for (const b of document.querySelectorAll('[data-weekstart]')) b.setAttribute('aria-checked', Number(b.dataset.weekstart) === state.weekStart);
   $('custom-from').value = state.customFrom;
   $('custom-to').value = state.customTo;
@@ -230,7 +234,7 @@ function renderTakeaways(m) {
         : `<strong>${fmt(t.allHours / weeks, 1)} h</strong> a week on average, all sports · ${fmt(t.hours / weeks, 1)} h of it ${sport}`;
   }
   if (!state.compare && t.sessions) {
-    $('take-load').innerHTML += ` · drag along the line for any ${m.grain === 'day' ? 'day' : 'week'}`;
+    $('take-load').innerHTML += ` · drag along the line for any ${lineUnit(m)}`;
   }
   const pace = m.sport.hasPaceZones && state.zone === 'pace';
   const secs = pace ? t.paceSecs : t.hrSecs;
@@ -271,6 +275,11 @@ const emphasis = (text) =>
 
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
+// With comparison off, the lines plot weeks or days (the "By week / By day" choice).
+// Ranges already charted by day only have days.
+const lineUnit = (m) => (m.grain === 'day' ? 'day' : state.lineUnit);
+const lineList = (m) => (lineUnit(m) === 'day' && m.grain !== 'day' ? m.days : m.weeks);
+
 function renderCharts(m) {
   if (!window.Chart) return; // Chart.js still loading; render() runs again once it has
 
@@ -278,16 +287,16 @@ function renderCharts(m) {
 
   // With comparison off, load and volume become lines (same points as the bars) you can drag along.
   const lines = !state.compare;
-  const per = m.grain === 'day' ? 'per day' : 'per week';
+  const per = (lines ? lineUnit(m) : m.grain) === 'day' ? 'per day' : 'per week';
   $('load-title').textContent = `Training load ${per}`;
   $('zones-title').textContent = `Time in zones ${m.grain === 'day' ? 'per day' : 'per week'}`;
   $('volume-title').textContent = state.measure === 'distance' ? `Distance ${per}` : `Training time ${per}`;
   $('info-load').dataset.tip = EXPLAIN.load;
 
   if (lines) {
-    drawLoadLine(m, (i) => scrubLoad(m, i));
+    drawLoadLine(m, lineList(m), (i) => scrubLoad(m, i));
     legend($('legend-load'), []);
-    legend($('legend-volume'), drawVolumeLine(m, state.measure, (i) => scrubVolume(m, i)));
+    legend($('legend-volume'), drawVolumeLine(m, lineList(m), state.measure, (i) => scrubVolume(m, i)));
   } else {
     const daily = m.grain === 'day';
     drawLoad(m);
@@ -314,12 +323,12 @@ function renderCharts(m) {
 
 // The point being dragged: "in the week of Sep 20" or "on Mon Oct 5".
 function pointName(m, w) {
-  if (m.grain === 'day') return `on ${longDay(w.from)}`;
+  if (w.days === 1) return `on ${longDay(w.from)}`;
   return `in the week of ${shortDate(w.from)}${w.partial ? ` (${w.days} days)` : ''}`;
 }
 
 function scrubLoad(m, i) {
-  const w = i == null ? null : m.weeks[i];
+  const w = i == null ? null : lineList(m)[i];
   if (!w) return renderTakeaways(m);
   $('take-load').innerHTML = w.future
     ? `${longDay(w.from)}: still to come`
@@ -327,7 +336,7 @@ function scrubLoad(m, i) {
 }
 
 function scrubVolume(m, i) {
-  const w = i == null ? null : m.weeks[i];
+  const w = i == null ? null : lineList(m)[i];
   if (!w) return renderTakeaways(m);
   $('take-volume').innerHTML = w.future
     ? `${longDay(w.from)}: still to come`
@@ -456,8 +465,18 @@ for (const b of document.querySelectorAll('[data-weeks]')) {
 $('compare-toggle').addEventListener('change', (e) => {
   state.compare = e.target.checked;
   store.setPrefs({ compare: state.compare });
+  syncControls();
   if (state.model) renderCharts(state.model);
 });
+
+for (const b of document.querySelectorAll('[data-lineunit]')) {
+  b.addEventListener('click', () => {
+    state.lineUnit = b.dataset.lineunit;
+    store.setPrefs({ lineUnit: state.lineUnit });
+    syncControls();
+    if (state.model) renderCharts(state.model);
+  });
+}
 
 for (const b of document.querySelectorAll('[data-weekstart]')) {
   b.addEventListener('click', () => {

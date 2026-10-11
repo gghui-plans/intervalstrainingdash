@@ -168,6 +168,12 @@ export function buildModel(data, sportKey, range) {
     .map((w) => ({ ...w, future: w.from > range.to }));
   const prevWeeks = blocks(prev.from, prevChartTo).map(withAll(within(inSport, { from: prev.from, to: prevChartTo })));
 
+  // Daily points for the line view's "By day" option, shaped like the weekly ones.
+  const days = eachDay(range.from, chartTo)
+    .map((d) => ({ from: d, to: d, days: 1, partial: false }))
+    .map(withAll(current))
+    .map((w) => ({ ...w, future: w.from > range.to }));
+
   const fitnessAll = fitnessSeries(inSport, data.from, range.to);
   const fitness = fitnessAll.filter((p) => p.date >= range.from);
   const fitnessAtPrevEnd = fitnessAll.find((p) => p.date === prev.to) || null;
@@ -191,6 +197,7 @@ export function buildModel(data, sportKey, range) {
   return {
     sportKey,
     grain,
+    days,
     sport,
     range: { ...range, days: daysBetween(range.from, range.to) + 1 },
     prev,
