@@ -1,7 +1,7 @@
 // The export: a Markdown report that mirrors the dashboard, and the raw JSON behind it.
 
 import { COACHING_PROMPT } from './config.js';
-import { rangeLabel, shortDate, today } from './dates.js';
+import { longDay, rangeLabel, shortDate, today } from './dates.js';
 import {
   EXPLAIN, change, dataNotes, fmt, formState, periodName, previousName, signed, summary, summarySentences, zoneLabel,
 } from './text.js';
@@ -94,12 +94,16 @@ export function buildMarkdown(m, athleteName) {
 
   const hr = m.zones.hr;
   const zoneHead = hr.count ? Array.from({ length: hr.count }, (_, i) => `Z${i + 1}`) : [];
-  out.push('## Week by week', '');
+  // Rows are weeks, or days for short ranges.
+  const daily = m.grain === 'day';
+  const rowHead = daily ? 'Day' : 'Week starting';
+  const rowLabel = (w) => (daily ? longDay(w.from) : shortDate(w.from) + (w.partial ? ` (${w.days} days)` : ''));
+  out.push(daily ? '## Day by day' : '## Week by week', '');
   out.push(
     table(
-      ['Week starting', sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), 'Distance (km)', 'Time (h)', 'All sports (h)', 'Load', ...zoneHead],
+      [rowHead, sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), 'Distance (km)', 'Time (h)', 'All sports (h)', 'Load', ...zoneHead],
       m.weeks.map((w) => [
-        shortDate(w.from) + (w.partial ? ` (${w.days} days)` : ''),
+        rowLabel(w),
         fmt(w.sessions),
         fmt(w.distanceKm, 1),
         fmt(w.hours, 1),
@@ -109,7 +113,7 @@ export function buildMarkdown(m, athleteName) {
       ]),
     ),
   );
-  if (hr.count) out.push('', 'Zone columns are the share of heart-rate time in each zone that week.');
+  if (hr.count) out.push('', `Zone columns are the share of heart-rate time in each zone that ${daily ? 'day' : 'week'}.`);
   out.push('');
 
   if (hr.ok) {
@@ -124,8 +128,8 @@ export function buildMarkdown(m, athleteName) {
     out.push('## Pace zones', '', EXPLAIN.paceZones, '');
     out.push(
       table(
-        ['Week starting', ...Array.from({ length: pz.count }, (_, i) => `Z${i + 1}`)],
-        m.weeks.map((w) => [shortDate(w.from), ...Array.from({ length: pz.count }, (_, i) => pct(w.paceSecs[i] || 0, w.paceTotalSecs))]),
+        [rowHead, ...Array.from({ length: pz.count }, (_, i) => `Z${i + 1}`)],
+        m.weeks.map((w) => [rowLabel(w), ...Array.from({ length: pz.count }, (_, i) => pct(w.paceSecs[i] || 0, w.paceTotalSecs))]),
       ),
       '',
       ...paceZoneLines(pz),
@@ -142,10 +146,10 @@ export function buildMarkdown(m, athleteName) {
     );
     out.push(
       table(
-        ['End of week', 'Fitness', 'Fatigue', 'Form'],
+        [daily ? 'Day' : 'End of week', 'Fitness', 'Fatigue', 'Form'],
         m.weeks.map((w) => {
           const f = m.fitness.find((x) => x.date === w.to);
-          return [shortDate(w.to), fmt(f.fitness), fmt(f.fatigue), `${signed(f.form)} (${formState(f.form)})`];
+          return [daily ? longDay(w.to) : shortDate(w.to), fmt(f.fitness), fmt(f.fatigue), `${signed(f.form)} (${formState(f.form)})`];
         }),
       ),
       '',
@@ -220,6 +224,7 @@ export function buildJson(m) {
     {
       sport: m.sportKey,
       range: { from: m.range.from, to: m.range.to },
+      grain: m.grain, // 'week' or 'day': what each entry in weeks covers
       previous: m.prev,
       exported: today(),
       source: 'intervals.icu',

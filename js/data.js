@@ -1,7 +1,7 @@
 // Turns cached intervals.icu data into the model that the dashboard and report share:
 // weekly rollups for one sport, the previous period, fitness/fatigue/form, and zones.
 
-import { FATIGUE_DAYS, FITNESS_DAYS, SPORTS, WARMUP_DAYS } from './config.js';
+import { DAILY_MAX_DAYS, FATIGUE_DAYS, FITNESS_DAYS, SPORTS, WARMUP_DAYS } from './config.js';
 import { addDays, daysBetween, eachDay } from './dates.js';
 
 const dateOf = (a) => (a.start_date_local || '').slice(0, 10);
@@ -153,8 +153,12 @@ export function buildModel(data, sportKey, range) {
   const allHours = (r) => within(everything, r).reduce((s, a) => s + (a.moving_time || 0) / 3600, 0);
   const withAll = (list) => (w) => ({ ...w, ...rollup(within(list, w), counts), allHours: allHours(w) });
 
-  const weeks = weekBlocks(range.from, range.to).map(withAll(current));
-  const prevWeeks = weekBlocks(prev.from, prev.to).map(withAll(before));
+  // Bars are weeks, or days for short ranges. They're called weeks throughout.
+  const grain = daysBetween(range.from, range.to) + 1 <= DAILY_MAX_DAYS ? 'day' : 'week';
+  const blocks = (from, to) =>
+    grain === 'day' ? eachDay(from, to).map((d) => ({ from: d, to: d, days: 1, partial: false })) : weekBlocks(from, to);
+  const weeks = blocks(range.from, range.to).map(withAll(current));
+  const prevWeeks = blocks(prev.from, prev.to).map(withAll(before));
 
   const fitnessAll = fitnessSeries(inSport, data.from, range.to);
   const fitness = fitnessAll.filter((p) => p.date >= range.from);
@@ -178,6 +182,7 @@ export function buildModel(data, sportKey, range) {
 
   return {
     sportKey,
+    grain,
     sport,
     range: { ...range, days: daysBetween(range.from, range.to) + 1 },
     prev,

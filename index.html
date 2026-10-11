@@ -65,6 +65,7 @@
         </div>
         <div class="range">
           <div class="segmented" role="radiogroup" aria-label="Date range" id="range-presets">
+            <button type="button" role="radio" data-weeks="1">1 wk</button>
             <button type="button" role="radio" data-weeks="4">4 wk</button>
             <button type="button" role="radio" data-weeks="8">8 wk</button>
             <button type="button" role="radio" data-weeks="12">12 wk</button>
@@ -100,7 +101,7 @@
       <div class="grid">
         <article class="card">
           <header class="card-head">
-            <h3>Training load per week</h3>
+            <h3 id="load-title">Training load per week</h3>
             <button type="button" class="info" id="info-load" aria-label="About training load">i</button>
           </header>
           <p class="takeaway" id="take-load"></p>
@@ -123,7 +124,7 @@
 
         <article class="card">
           <header class="card-head">
-            <h3>Time in zones per week</h3>
+            <h3 id="zones-title">Time in zones per week</h3>
             <div class="segmented small" role="radiogroup" aria-label="Zone type" id="zone-toggle">
               <button type="button" role="radio" data-zone="hr" aria-checked="true">Heart rate</button>
               <button type="button" role="radio" data-zone="pace" aria-checked="false">Pace</button>

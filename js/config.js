@@ -20,8 +20,12 @@ export const SPORTS = {
   },
 };
 
-// Date range presets, in weeks. The first is the default.
-export const PRESET_WEEKS = [4, 8, 12];
+// Date range presets, in weeks, and the one selected on first visit.
+export const PRESET_WEEKS = [1, 4, 8, 12];
+export const DEFAULT_WEEKS = 4;
+
+// Ranges this short or shorter are charted by day instead of by week.
+export const DAILY_MAX_DAYS = 14;
 
 // Fitness and fatigue time constants (days). These are intervals.icu's defaults.
 export const FITNESS_DAYS = 42;

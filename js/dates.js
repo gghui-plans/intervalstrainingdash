@@ -28,3 +28,9 @@ export function rangeLabel(from, to) {
   const sameYear = from.slice(0, 4) === to.slice(0, 4);
   return `${shortDate(from)}${sameYear ? '' : ' ' + from.slice(0, 4)} – ${shortDate(to)} ${to.slice(0, 4)}`;
 }
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export const weekday = (d) => WEEKDAYS[new Date(toMs(d)).getUTCDay()];
+export const dayLabel = (d) => `${weekday(d)} ${+d.slice(8, 10)}`; // "Mon 5"
+export const longDay = (d) => `${weekday(d)} ${shortDate(d)}`; // "Mon Oct 5"

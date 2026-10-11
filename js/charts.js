@@ -1,6 +1,6 @@
 // The four charts. Chart.js is loaded globally from index.html.
 
-import { shortDate } from './dates.js';
+import { dayLabel, longDay, shortDate } from './dates.js';
 import { EXPLAIN, fmt, signed, zoneLabel } from './text.js';
 
 const instances = {};
@@ -27,7 +27,9 @@ function zoneStep(i, n) {
   return n <= 1 ? 1 : Math.round(1 + (i * 6) / (n - 1));
 }
 
-const weekLabel = (w) => shortDate(w.from) + (w.partial ? '*' : '');
+// Bars are weeks, or days for short ranges (m.grain).
+const barLabel = (m) => (w) => (m.grain === 'day' ? dayLabel(w.from) : shortDate(w.from) + (w.partial ? '*' : ''));
+const barTitle = (m, w) => (m.grain === 'day' ? longDay(w.from) : `Week of ${shortDate(w.from)}`);
 
 function base(t, { stacked = false, yTitle = '' } = {}) {
   return {
@@ -91,7 +93,7 @@ export function drawLoad(m) {
   draw('chart-load', {
     type: 'bar',
     data: {
-      labels: weeks.map(weekLabel),
+      labels: weeks.map(barLabel(m)),
       datasets: [
         { label: 'Previous period', data: m.prevWeeks.map((w) => Math.round(w.load)), ...bar(t.prev) },
         { label: 'This period', data: weeks.map((w) => Math.round(w.load)), ...bar(t.s1) },
@@ -104,10 +106,10 @@ export function drawLoad(m) {
         tooltip: {
           ...base(t).plugins.tooltip,
           callbacks: {
-            title: (items) => `Week of ${shortDate(weeks[items[0].dataIndex].from)}`,
+            title: (items) => barTitle(m, weeks[items[0].dataIndex]),
             label: (c) => {
               const w = (c.datasetIndex === 0 ? m.prevWeeks : weeks)[c.dataIndex];
-              const when = c.datasetIndex === 0 ? ` (week of ${shortDate(w.from)})` : '';
+              const when = c.datasetIndex === 0 ? ` (${m.grain === 'day' ? longDay(w.from) : `week of ${shortDate(w.from)}`})` : '';
               return ` ${c.dataset.label}${when}: ${fmt(w.load)}`;
             },
           },
@@ -136,7 +138,7 @@ export function drawVolume(m, measure) {
       ];
   draw('chart-volume', {
     type: 'bar',
-    data: { labels: m.weeks.map(weekLabel), datasets },
+    data: { labels: m.weeks.map(barLabel(m)), datasets },
     options: {
       ...base(t, { stacked: !isKm, yTitle: isKm ? 'km' : 'hours' }),
       plugins: {
@@ -145,7 +147,7 @@ export function drawVolume(m, measure) {
           ...base(t).plugins.tooltip,
           itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
           callbacks: {
-            title: (items) => `Week of ${shortDate(m.weeks[items[0].dataIndex].from)}`,
+            title: (items) => barTitle(m, m.weeks[items[0].dataIndex]),
             label: (c) => {
               const w = m.weeks[c.dataIndex];
               if (isKm) return ` ${fmt(w.distanceKm, 1)} km · ${w.sessions} ${m.sport.noun[w.sessions === 1 ? 0 : 1]}`;
@@ -168,7 +170,7 @@ export function drawZones(m, kind) {
   draw('chart-zones', {
     type: 'bar',
     data: {
-      labels: m.weeks.map(weekLabel),
+      labels: m.weeks.map(barLabel(m)),
       datasets: Array.from({ length: n }, (_, i) => ({
         label: zoneLabel(zones, i),
         data: m.weeks.map((w) => +((w[key][i] || 0) / 3600).toFixed(2)),
@@ -189,7 +191,7 @@ export function drawZones(m, kind) {
           itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
           filter: (c) => c.raw > 0,
           callbacks: {
-            title: (items) => `Week of ${shortDate(m.weeks[items[0].dataIndex].from)}`,
+            title: (items) => barTitle(m, m.weeks[items[0].dataIndex]),
             label: (c) => {
               const w = m.weeks[c.dataIndex];
               const total = kind === 'pace' ? w.paceTotalSecs : w.hrTotalSecs;

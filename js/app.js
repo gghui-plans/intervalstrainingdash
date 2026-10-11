@@ -1,6 +1,6 @@
 // Page wiring: controls, loading, rendering and export.
 
-import { PRESET_WEEKS, SPORTS } from './config.js';
+import { DEFAULT_WEEKS, SPORTS } from './config.js';
 import { addDays, rangeLabel, shortDate, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
 import { drawFitness, drawLoad, drawVolume, drawZones } from './charts.js';
@@ -14,7 +14,7 @@ const demo = new URLSearchParams(location.search).has('demo');
 const prefs = store.getPrefs();
 const state = {
   sport: prefs.sport || null, // null until we know which sport the athlete has
-  weeks: prefs.weeks || PRESET_WEEKS[0], // a number, or 'custom'
+  weeks: prefs.weeks || DEFAULT_WEEKS, // a number, or 'custom'
   customFrom: prefs.customFrom || addDays(today(), -27),
   customTo: prefs.customTo || today(),
   measure: 'distance',
@@ -191,17 +191,30 @@ function renderGauge(m) {
 function renderTakeaways(m) {
   const t = m.totals;
   const weeks = m.range.days / 7;
-  // The charts are per week, so lead with the weekly average and label the total.
-  const span = `over ${m.range.days % 7 === 0 ? `${weeks} weeks` : `${m.range.days} days`}`;
+  const sport = m.sport.label.toLowerCase();
+  const span = `over ${m.range.days % 7 === 0 && weeks > 1 ? `${weeks} weeks` : `${m.range.days} days`}`;
   const c = change(t.load, m.prevTotals.load);
-  $('take-load').innerHTML = t.sessions
-    ? `<strong>${fmt(t.load / weeks)}</strong> a week on average · ${fmt(t.load)} ${span}${c ? ` (${c})` : ''}`
-    : '';
-  $('take-volume').innerHTML = !t.sessions
-    ? ''
-    : state.measure === 'distance'
-      ? `<strong>${fmt(t.distanceKm / weeks)} km</strong> a week on average · ${fmt(t.distanceKm)} km ${span}`
-      : `<strong>${fmt(t.allHours / weeks, 1)} h</strong> a week on average, all sports · ${fmt(t.hours / weeks, 1)} h of it ${m.sport.label.toLowerCase()}`;
+  if (m.grain === 'day') {
+    // A short range is about its total against the period before; the bars give the days.
+    const cd = change(t.distanceKm, m.prevTotals.distanceKm);
+    const ch = change(t.allHours, m.prevTotals.allHours);
+    $('take-load').innerHTML = t.sessions ? `<strong>${fmt(t.load)}</strong> ${span}${c ? ` (${c})` : ''}` : '';
+    $('take-volume').innerHTML = !t.sessions
+      ? ''
+      : state.measure === 'distance'
+        ? `<strong>${fmt(t.distanceKm, 1)} km</strong> ${span}${cd ? ` (${cd})` : ''}`
+        : `<strong>${fmt(t.allHours, 1)} h</strong> all sports ${span}${ch ? ` (${ch})` : ''} · ${fmt(t.hours, 1)} h of it ${sport}`;
+  } else {
+    // The charts are per week, so lead with the weekly average and label the total.
+    $('take-load').innerHTML = t.sessions
+      ? `<strong>${fmt(t.load / weeks)}</strong> a week on average · ${fmt(t.load)} ${span}${c ? ` (${c})` : ''}`
+      : '';
+    $('take-volume').innerHTML = !t.sessions
+      ? ''
+      : state.measure === 'distance'
+        ? `<strong>${fmt(t.distanceKm / weeks)} km</strong> a week on average · ${fmt(t.distanceKm)} km ${span}`
+        : `<strong>${fmt(t.allHours / weeks, 1)} h</strong> a week on average, all sports · ${fmt(t.hours / weeks, 1)} h of it ${sport}`;
+  }
   const pace = m.sport.hasPaceZones && state.zone === 'pace';
   const secs = pace ? t.paceSecs : t.hrSecs;
   const total = pace ? t.paceTotalSecs : t.hrTotalSecs;
@@ -246,14 +259,19 @@ function renderCharts(m) {
 
   renderTakeaways(m);
 
+  const daily = m.grain === 'day';
+  const per = daily ? 'per day' : 'per week';
+  $('load-title').textContent = `Training load ${per}`;
+  $('zones-title').textContent = `Time in zones ${per}`;
+  $('volume-title').textContent = state.measure === 'distance' ? `Distance ${per}` : `Training time ${per}`;
+
   $('info-load').dataset.tip = EXPLAIN.load;
   drawLoad(m);
   legend($('legend-load'), [
     { label: 'This period', color: cssVar('--series-1') },
-    { label: 'Previous period, same week', color: cssVar('--series-prev') },
+    { label: daily ? (m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
   ]);
 
-  $('volume-title').textContent = state.measure === 'distance' ? 'Distance per week' : 'Training time per week';
   legend($('legend-volume'), drawVolume(m, state.measure));
 
   renderZones(m);
