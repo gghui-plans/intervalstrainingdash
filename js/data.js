@@ -13,6 +13,8 @@ export function fetchWindow(range) {
 }
 
 export function previousPeriod(range) {
+  // A calendar week compares with the same weekdays of the week before.
+  if (range.calendar) return { from: addDays(range.from, -7), to: addDays(range.to, -7) };
   const days = daysBetween(range.from, range.to) + 1;
   const to = addDays(range.from, -1);
   return { from: addDays(to, -(days - 1)), to };
@@ -154,11 +156,17 @@ export function buildModel(data, sportKey, range) {
   const withAll = (list) => (w) => ({ ...w, ...rollup(within(list, w), counts), allHours: allHours(w) });
 
   // Bars are weeks, or days for short ranges. They're called weeks throughout.
-  const grain = daysBetween(range.from, range.to) + 1 <= DAILY_MAX_DAYS ? 'day' : 'week';
+  // A calendar week charts all seven days (chartTo), with the days still to come
+  // empty, against the whole of the week before. Totals stay on equal days.
+  const chartTo = range.chartTo || range.to;
+  const prevChartTo = addDays(prev.from, daysBetween(range.from, chartTo));
+  const grain = daysBetween(range.from, chartTo) + 1 <= DAILY_MAX_DAYS ? 'day' : 'week';
   const blocks = (from, to) =>
     grain === 'day' ? eachDay(from, to).map((d) => ({ from: d, to: d, days: 1, partial: false })) : weekBlocks(from, to);
-  const weeks = blocks(range.from, range.to).map(withAll(current));
-  const prevWeeks = blocks(prev.from, prev.to).map(withAll(before));
+  const weeks = blocks(range.from, chartTo)
+    .map(withAll(current))
+    .map((w) => ({ ...w, future: w.from > range.to }));
+  const prevWeeks = blocks(prev.from, prevChartTo).map(withAll(within(inSport, { from: prev.from, to: prevChartTo })));
 
   const fitnessAll = fitnessSeries(inSport, data.from, range.to);
   const fitness = fitnessAll.filter((p) => p.date >= range.from);

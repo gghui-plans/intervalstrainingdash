@@ -45,7 +45,7 @@ npx serve .
 
 **Fitness, fatigue and form per sport.** intervals.icu stores fitness and fatigue for all sports combined. To keep the sports separate, this page calculates them for the selected sport from intervals.icu's own load on each session, with the standard 42-day and 7-day weighted averages. It fetches 150 days of extra history so the lines have settled. The report also gives the all-sports values as intervals.icu reports them.
 
-**Weeks and days.** Bars are 7-day blocks counted back from the last day of the range, so "last 4 weeks" always ends today. Ranges of 14 days or less (including the 1-week tab) switch to daily bars, compared with the same day in the period before. The previous period is always the same length, immediately before.
+**Weeks and days.** Bars are 7-day blocks counted back from the last day of the range, so "last 4 weeks" always ends today. The 1-week tab is the calendar week so far (starting Monday or Sunday, your choice), charted by day and compared with the same weekdays of last week. Other ranges of 14 days or less also switch to daily bars. The previous period is always the same length, immediately before.
 
 **Sports.** Running is `Run`, `TrailRun` and `VirtualRun`. Paddling is `Canoeing`, `Kayaking`, `StandUpPaddling` and `Rowing`. Change these in `js/config.js`. Other activity types are listed as "not shown" rather than mixed in.
 

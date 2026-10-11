@@ -35,6 +35,7 @@ export function formState(form) {
 // "Last 4 weeks" for a preset ending today, otherwise the dates.
 export function periodName(range) {
   const days = daysBetween(range.from, range.to) + 1;
+  if (range.calendar) return range.to === range.chartTo ? 'This week' : 'This week so far';
   if (range.to === today() && days === 7) return 'Last 7 days';
   if (range.to === today() && days % 7 === 0) return `Last ${days / 7} weeks`;
   return rangeLabel(range.from, range.to);
@@ -42,6 +43,7 @@ export function periodName(range) {
 
 export function previousName(range) {
   const days = daysBetween(range.from, range.to) + 1;
+  if (range.calendar) return range.to === range.chartTo ? 'last week' : 'the same days last week';
   return days % 7 === 0 && days > 7 ? `the previous ${days / 7} weeks` : `the previous ${days} days`;
 }
 

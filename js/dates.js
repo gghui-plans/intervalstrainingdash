@@ -34,3 +34,9 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const weekday = (d) => WEEKDAYS[new Date(toMs(d)).getUTCDay()];
 export const dayLabel = (d) => `${weekday(d)} ${+d.slice(8, 10)}`; // "Mon 5"
 export const longDay = (d) => `${weekday(d)} ${shortDate(d)}`; // "Mon Oct 5"
+
+// The first day of the calendar week containing d. startDow: 0 Sunday, 1 Monday.
+export function startOfWeek(d, startDow) {
+  const dow = new Date(toMs(d)).getUTCDay();
+  return addDays(d, -((dow - startDow + 7) % 7));
+}

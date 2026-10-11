@@ -1,11 +1,11 @@
 // Page wiring: controls, loading, rendering and export.
 
 import { DEFAULT_WEEKS, SPORTS } from './config.js';
-import { addDays, rangeLabel, shortDate, today } from './dates.js';
+import { addDays, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
 import { drawFitness, drawLoad, drawVolume, drawZones } from './charts.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
-import { EXPLAIN, change, dataNotes, fmt, formState, signed, summary } from './text.js';
+import { EXPLAIN, change, dataNotes, fmt, formState, periodName, signed, summary } from './text.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +15,7 @@ const prefs = store.getPrefs();
 const state = {
   sport: prefs.sport || null, // null until we know which sport the athlete has
   weeks: prefs.weeks || DEFAULT_WEEKS, // a number, or 'custom'
+  weekStart: prefs.weekStart ?? 1, // 1 Monday, 0 Sunday
   customFrom: prefs.customFrom || addDays(today(), -27),
   customTo: prefs.customTo || today(),
   measure: 'distance',
@@ -25,6 +26,11 @@ const state = {
 
 function currentRange() {
   if (state.weeks === 'custom') return { from: state.customFrom, to: state.customTo };
+  if (state.weeks === 1) {
+    // The calendar week so far; the charts still show the whole week.
+    const from = startOfWeek(today(), state.weekStart);
+    return { from, to: today(), chartTo: addDays(from, 6), calendar: true };
+  }
   return { from: addDays(today(), -(state.weeks * 7 - 1)), to: today() };
 }
 
@@ -192,7 +198,9 @@ function renderTakeaways(m) {
   const t = m.totals;
   const weeks = m.range.days / 7;
   const sport = m.sport.label.toLowerCase();
-  const span = `over ${m.range.days % 7 === 0 && weeks > 1 ? `${weeks} weeks` : `${m.range.days} days`}`;
+  const span = m.range.calendar
+    ? periodName(m.range).toLowerCase()
+    : `over ${m.range.days % 7 === 0 && weeks > 1 ? `${weeks} weeks` : `${m.range.days} days`}`;
   const c = change(t.load, m.prevTotals.load);
   if (m.grain === 'day') {
     // A short range is about its total against the period before; the bars give the days.
@@ -268,8 +276,8 @@ function renderCharts(m) {
   $('info-load').dataset.tip = EXPLAIN.load;
   drawLoad(m);
   legend($('legend-load'), [
-    { label: 'This period', color: cssVar('--series-1') },
-    { label: daily ? (m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
+    { label: m.range.calendar ? 'This week' : 'This period', color: cssVar('--series-1') },
+    { label: daily ? (m.range.calendar ? 'Last week' : m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
   ]);
 
   legend($('legend-volume'), drawVolume(m, state.measure));

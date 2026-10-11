@@ -397,3 +397,11 @@ body {
   .summary-lines { gap: 12px; }
   .summary-lines div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* Week start toggle, shown with the 1-week tab */
+.week-start { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-2); }
+@media (max-width: 640px) {
+  .week-start { justify-content: space-between; }
+  .controls .week-start .segmented { display: inline-flex; }
+  .controls .week-start .segmented button { flex: none; padding-left: 14px; padding-right: 14px; }
+}

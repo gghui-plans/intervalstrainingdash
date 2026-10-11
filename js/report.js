@@ -57,7 +57,8 @@ export function buildMarkdown(m, athleteName) {
   const { sport, range, prev, totals: t, prevTotals: p } = m;
   const dates = rangeLabel(range.from, range.to);
   const name = periodName(range);
-  const rangeText = name === dates ? dates : `the ${name.toLowerCase()} (${dates})`;
+  const rangeText =
+    name === dates ? dates : range.calendar ? `${name.toLowerCase()} (${dates})` : `the ${name.toLowerCase()} (${dates})`;
   const out = [];
 
   out.push(COACHING_PROMPT(sport.label, rangeText), '', '---', '');
@@ -96,13 +97,14 @@ export function buildMarkdown(m, athleteName) {
   const zoneHead = hr.count ? Array.from({ length: hr.count }, (_, i) => `Z${i + 1}`) : [];
   // Rows are weeks, or days for short ranges.
   const daily = m.grain === 'day';
+  const bars = m.weeks.filter((w) => !w.future); // a calendar week's days still to come
   const rowHead = daily ? 'Day' : 'Week starting';
   const rowLabel = (w) => (daily ? longDay(w.from) : shortDate(w.from) + (w.partial ? ` (${w.days} days)` : ''));
   out.push(daily ? '## Day by day' : '## Week by week', '');
   out.push(
     table(
       [rowHead, sport.noun[1][0].toUpperCase() + sport.noun[1].slice(1), 'Distance (km)', 'Time (h)', 'All sports (h)', 'Load', ...zoneHead],
-      m.weeks.map((w) => [
+      bars.map((w) => [
         rowLabel(w),
         fmt(w.sessions),
         fmt(w.distanceKm, 1),
@@ -129,7 +131,7 @@ export function buildMarkdown(m, athleteName) {
     out.push(
       table(
         [rowHead, ...Array.from({ length: pz.count }, (_, i) => `Z${i + 1}`)],
-        m.weeks.map((w) => [rowLabel(w), ...Array.from({ length: pz.count }, (_, i) => pct(w.paceSecs[i] || 0, w.paceTotalSecs))]),
+        bars.map((w) => [rowLabel(w), ...Array.from({ length: pz.count }, (_, i) => pct(w.paceSecs[i] || 0, w.paceTotalSecs))]),
       ),
       '',
       ...paceZoneLines(pz),
@@ -147,7 +149,7 @@ export function buildMarkdown(m, athleteName) {
     out.push(
       table(
         [daily ? 'Day' : 'End of week', 'Fitness', 'Fatigue', 'Form'],
-        m.weeks.map((w) => {
+        bars.map((w) => {
           const f = m.fitness.find((x) => x.date === w.to);
           return [daily ? longDay(w.to) : shortDate(w.to), fmt(f.fitness), fmt(f.fatigue), `${signed(f.form)} (${formState(f.form)})`];
         }),
