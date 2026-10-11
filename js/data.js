@@ -65,12 +65,17 @@ function rollup(activities, zoneCounts) {
 }
 
 // The sport-settings block in intervals.icu that applies to this sport.
+// A sport with no settings block of its own falls under intervals.icu's "Other"
+// block, which is what intervals.icu itself uses for its zones and load.
 function settingsFor(sportSettings, sport) {
   const matches = sportSettings.filter((s) => (s.types || []).some((t) => sport.types.includes(t)));
-  return matches.find((s) => s.types.includes(sport.types[0])) || matches[0] || null;
+  const own = matches.find((s) => s.types.includes(sport.types[0])) || matches[0];
+  if (own) return { settings: own, fallback: false };
+  const other = sportSettings.find((s) => (s.types || []).includes('Other'));
+  return { settings: other || null, fallback: !!other };
 }
 
-function zoneInfo(settings, sport, activities) {
+function zoneInfo({ settings, fallback }, sport, activities) {
   const dataHr = Math.max(0, ...activities.map((a) => a.icu_hr_zone_times?.length || 0));
   const dataPace = Math.max(0, ...activities.map((a) => a.pace_zone_times?.length || 0));
   const hrBounds = settings?.hr_zones || [];
@@ -80,6 +85,7 @@ function zoneInfo(settings, sport, activities) {
   const names = (given, n) => Array.from({ length: n }, (_, i) => given?.[i] || '');
   return {
     settingsFound: !!settings,
+    usesOther: fallback,
     hr: {
       ok: hrBounds.length > 0,
       count: hrCount,

@@ -118,6 +118,14 @@ export function dataNotes(m) {
   } else if (!m.zones.hr.ok) {
     notes.push(`Heart-rate zones are not set for ${m.sport.label.toLowerCase()} in intervals.icu, so time in zones can't be shown.`);
   }
+  if (m.zones.usesOther) {
+    const sport = m.sport.label.toLowerCase();
+    notes.push(
+      `${m.sport.label} has no sport settings of its own in intervals.icu, so zones and load use your "Other" settings` +
+        (m.zones.hr.lthr ? ` (threshold heart rate ${m.zones.hr.lthr} bpm)` : '') +
+        `. If your heart rate runs lower when ${sport === 'paddling' ? 'paddling' : 'doing this sport'}, add ${sport} settings there so zones and load fit.`,
+    );
+  }
   if (m.sport.hasPaceZones && m.zones.settingsFound && !m.zones.pace.ok) {
     notes.push('Pace zones or threshold pace are not set for running in intervals.icu, so pace zones can\'t be shown.');
   }
@@ -128,7 +136,7 @@ export function dataNotes(m) {
   if (m.unavailable) {
     notes.push(
       `${plural(m.unavailable, ['activity', 'activities'])} came from Strava, which intervals.icu can't share through its API. ` +
-        'Connect your watch (Garmin, Coros, Suunto, Polar…) to intervals.icu directly to include them.',
+        'Connect your watch (Garmin, Coros, Suunto, Polar…) to intervals.icu directly; once it is, the watch copy normally replaces the Strava one.',
     );
   }
   const other = Object.entries(m.otherTypes);
