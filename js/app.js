@@ -5,7 +5,7 @@ import { addDays, rangeLabel, shortDate, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
 import { drawFitness, drawLoad, drawVolume, drawZones } from './charts.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
-import { EXPLAIN, change, dataNotes, fmt, formState, previousName, signed, summarySentences } from './text.js';
+import { EXPLAIN, change, dataNotes, fmt, formState, signed, summary } from './text.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -109,7 +109,11 @@ function renderUpdated(data) {
 
 function renderSummary(m) {
   $('summary-title').textContent = `${m.sport.label} · ${rangeLabel(m.range.from, m.range.to)}`;
-  $('summary-text').textContent = summarySentences(m).join(' ');
+  const { lead, lines } = summary(m);
+  $('summary-text').textContent = lead;
+  $('summary-lines').innerHTML = lines
+    .map(({ label, text }) => `<div><dt>${label}</dt><dd>${emphasis(text)}</dd></div>`)
+    .join('');
   $('notes').replaceChildren(...dataNotes(m).map((n) => Object.assign(document.createElement('li'), { textContent: n })));
   renderTiles(m);
   renderGauge(m);
@@ -186,24 +190,26 @@ function renderGauge(m) {
 function renderTakeaways(m) {
   const t = m.totals;
   const weeks = m.range.days / 7;
+  // The charts are per week, so lead with the weekly average and label the total.
+  const span = `over ${m.range.days % 7 === 0 ? `${weeks} weeks` : `${m.range.days} days`}`;
   const c = change(t.load, m.prevTotals.load);
   $('take-load').innerHTML = t.sessions
-    ? `<strong>${fmt(t.load)}</strong> in total${c ? `, ${c} on ${previousName(m.range)}` : ''}`
+    ? `<strong>${fmt(t.load / weeks)}</strong> a week on average · ${fmt(t.load)} ${span}${c ? ` (${c})` : ''}`
     : '';
   $('take-volume').innerHTML = !t.sessions
     ? ''
     : state.measure === 'distance'
-      ? `<strong>${fmt(t.distanceKm)} km</strong>, about ${fmt(t.distanceKm / weeks)} km a week`
-      : `<strong>${fmt(t.hours, 1)} h</strong>, about ${fmt(t.hours / weeks, 1)} h a week`;
+      ? `<strong>${fmt(t.distanceKm / weeks)} km</strong> a week on average · ${fmt(t.distanceKm)} km ${span}`
+      : `<strong>${fmt(t.hours / weeks, 1)} h</strong> a week on average · ${fmt(t.hours, 1)} h ${span}`;
   const pace = m.sport.hasPaceZones && state.zone === 'pace';
   const secs = pace ? t.paceSecs : t.hrSecs;
   const total = pace ? t.paceTotalSecs : t.hrTotalSecs;
   $('take-zones').innerHTML = total
-    ? `<strong>${fmt((((secs[0] || 0) + (secs[1] || 0)) / total) * 100)}%</strong> of ${pace ? 'running' : 'training'} time easy (Z1–Z2)`
+    ? `<strong>${fmt((((secs[0] || 0) + (secs[1] || 0)) / total) * 100)}%</strong> of time easy (Z1–Z2) ${span}`
     : '';
   const last = m.fitness[m.fitness.length - 1];
   $('take-fitness').innerHTML = last
-    ? `Fitness <strong>${fmt(last.fitness)}</strong> · Fatigue <strong>${fmt(last.fatigue)}</strong> · Form <strong>${signed(last.form)}</strong>`
+    ? `Today: Fitness <strong>${fmt(last.fitness)}</strong> · Fatigue <strong>${fmt(last.fatigue)}</strong> · Form <strong>${signed(last.form)}</strong>`
     : '';
 }
 
@@ -224,6 +230,13 @@ function legend(el, items) {
     }),
   );
 }
+
+// Summary text can include zone names from the user's intervals.icu settings, so
+// escape it before turning **emphasis** into bold.
+const emphasis = (text) =>
+  text
+    .replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 

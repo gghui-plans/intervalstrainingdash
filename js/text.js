@@ -54,60 +54,65 @@ export function change(cur, prev) {
 
 const plural = (n, [one, many]) => `${fmt(n)} ${n === 1 ? one : many}`;
 
-// The coach's-glance paragraph, as a list of sentences.
-export function summarySentences(m) {
+// The coach's-glance summary: a lead sentence, then one labelled line each for
+// volume, intensity and fitness. **Double asterisks** mark emphasis; the page turns
+// them into bold and the report keeps them as Markdown.
+export function summary(m) {
   const t = m.totals;
   const p = m.prevTotals;
   const prevName = previousName(m.range);
-  const out = [];
+  const lines = [];
 
   if (!t.sessions) {
-    out.push(`${periodName(m.range)}: no ${m.sport.noun[1]} recorded.`);
-    if (p.sessions) out.push(`${prevName[0].toUpperCase() + prevName.slice(1)} had ${plural(p.sessions, m.sport.noun)}.`);
-    return out;
+    const lead = `${periodName(m.range)}: no ${m.sport.noun[1]} recorded.`;
+    if (p.sessions) lines.push({ label: 'Before', text: `${cap(prevName)} had ${plural(p.sessions, m.sport.noun)}.` });
+    return { lead, lines };
   }
 
-  out.push(
-    `${periodName(m.range)}: ${plural(t.sessions, m.sport.noun)}, ${fmt(t.distanceKm)} km, ${fmt(t.hours, 1)} h, load ${fmt(t.load)}.`,
-  );
+  const lead = `${periodName(m.range)}: ${plural(t.sessions, m.sport.noun)}, ${fmt(t.distanceKm)} km, ${fmt(t.hours, 1)} h, load ${fmt(t.load)}.`;
 
   if (!p.sessions) {
-    out.push(`No ${m.sport.noun[1]} in ${prevName} to compare against.`);
+    lines.push({ label: 'Volume', text: `No ${m.sport.noun[1]} in ${prevName} to compare with.` });
   } else {
-    const parts = [
-      ['load', change(t.load, p.load)],
+    const load = change(t.load, p.load) || 'level';
+    const others = [
       ['distance', change(t.distanceKm, p.distanceKm)],
       ['time', change(t.hours, p.hours)],
-    ].filter(([, c]) => c);
-    const sessionDiff = t.sessions - p.sessions;
-    const sessions =
-      sessionDiff === 0 ? 'the same number of sessions' : `${plural(Math.abs(sessionDiff), ['session', 'sessions'])} ${sessionDiff > 0 ? 'more' : 'fewer'}`;
-    const first = parts.shift() || ['sessions', `${sessionDiff >= 0 ? 'up' : 'down'} ${Math.abs(sessionDiff)}`];
-    out.push(
-      `${first[0][0].toUpperCase() + first[0].slice(1)} ${first[1]} on ${prevName}` +
-        (parts.length ? `; ${parts.map(([k, c]) => `${k} ${c}`).join(', ')}` : '') +
-        `, with ${sessions}.`,
-    );
+    ].filter(([, c]) => c).map(([k, c]) => `${k} ${c}`);
+    const diff = t.sessions - p.sessions;
+    others.push(diff === 0 ? 'same number of sessions' : `${plural(Math.abs(diff), ['session', 'sessions'])} ${diff > 0 ? 'more' : 'fewer'}`);
+    lines.push({ label: 'Volume', text: `Load **${load}** on ${prevName}. ${cap(others.join(', '))}.` });
   }
 
   if (t.easyShare != null) {
-    let s = `${Math.round(t.easyShare * 100)}% of time in Z1–Z2`;
-    if (p.easyShare != null) s += ` (${Math.round(p.easyShare * 100)}% before)`;
-    s += `; most time in ${zoneLabel(m.zones.hr, t.dominantZone)}.`;
-    out.push(s);
+    const now = Math.round(t.easyShare * 100);
+    const before = p.easyShare != null ? Math.round(p.easyShare * 100) : null;
+    const trend = before == null ? '' : before === now ? ', same as before' : `, ${now > before ? 'up' : 'down'} from ${before}%`;
+    lines.push({
+      label: 'Intensity',
+      text: `**${now}%** of time easy (Z1–Z2)${trend}. Most time in ${zoneLabel(m.zones.hr, t.dominantZone)}.`,
+    });
   }
 
   const last = m.fitness[m.fitness.length - 1];
   if (last) {
-    let s = `Fitness ${fmt(last.fitness)}`;
+    let text = `Fitness **${fmt(last.fitness)}**`;
     if (m.fitnessAtPrevEnd) {
-      const d = signed(last.fitness - m.fitnessAtPrevEnd.fitness);
-      s += d === '0' ? ' (level over the period)' : ` (${d} over the period)`;
+      const d = Math.round(last.fitness - m.fitnessAtPrevEnd.fitness);
+      text += d === 0 ? ', level over the period' : `, ${d > 0 ? 'up' : 'down'} ${Math.abs(d)} over the period`;
     }
-    s += `, form ${signed(last.form)}: ${formState(last.form)}.`;
-    out.push(s);
+    text += `. Form **${signed(last.form)}, ${formState(last.form)}**.`;
+    lines.push({ label: 'Fitness', text });
   }
-  return out;
+  return { lead, lines };
+}
+
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+
+// Plain sentences, for places without formatting (the JSON export).
+export function summarySentences(m) {
+  const { lead, lines } = summary(m);
+  return [lead, ...lines.map((l) => l.text.replace(/\*\*/g, ''))];
 }
 
 // Notes about data quality, shown on the dashboard and repeated in the report.

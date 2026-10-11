@@ -3,7 +3,7 @@
 import { COACHING_PROMPT } from './config.js';
 import { rangeLabel, shortDate, today } from './dates.js';
 import {
-  EXPLAIN, change, dataNotes, fmt, formState, periodName, previousName, signed, summarySentences, zoneLabel,
+  EXPLAIN, change, dataNotes, fmt, formState, periodName, previousName, signed, summary, summarySentences, zoneLabel,
 } from './text.js';
 
 const pct = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '–');
@@ -69,7 +69,8 @@ export function buildMarkdown(m, athleteName) {
     '',
   );
 
-  out.push('## Summary', '', summarySentences(m).join(' '), '');
+  const s = summary(m);
+  out.push('## Summary', '', s.lead, '', ...s.lines.map((l) => `- **${l.label}:** ${l.text}`), '');
 
   const lastFit = m.fitness[m.fitness.length - 1];
   const prevFit = m.fitnessAtPrevEnd;

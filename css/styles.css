@@ -380,3 +380,17 @@ body {
   .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .tile-value { font-size: 1.35rem; }
 }
+
+/* Summary lines: label on the left, sentence on the right; stacked on phones */
+.summary-text { font-weight: 550; }
+.summary-lines { display: grid; gap: 8px; margin: 14px 0 0; max-width: 72ch; }
+.summary-lines div { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; }
+.summary-lines dt {
+  font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3);
+}
+.summary-lines dd { margin: 0; font-size: 1.02rem; line-height: 1.5; color: var(--text-2); }
+.summary-lines strong { color: var(--text-1); font-weight: 650; }
+@media (max-width: 640px) {
+  .summary-lines { gap: 12px; }
+  .summary-lines div { grid-template-columns: 1fr; gap: 2px; }
+}
