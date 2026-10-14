@@ -256,7 +256,12 @@ export function planContext(data, sportKey, plan, weekStart, now = today()) {
   let horizon = addDays(now, FORECAST_DAYS);
   if (ownA && ownA.date > horizon && daysBetween(now, ownA.date) <= RACE_REACH_DAYS) horizon = ownA.date;
   const points = projectTo(horizon).filter((p) => p.date > now);
-  const raceForecast = race && race.sport === sportKey && race.date > now && race.date <= horizon ? pointOn(race.date) : null;
+  // Race-day fitness is quoted only when the plan runs to within a week of the race;
+  // otherwise it would mostly show fitness fading over unplanned weeks.
+  const lastPlanned = workouts.length ? workouts[workouts.length - 1].date : null;
+  const covered = race && lastPlanned && lastPlanned >= addDays(race.date, -7);
+  const raceForecast =
+    covered && race.sport === sportKey && race.date > now && race.date <= horizon ? pointOn(race.date) : null;
 
   return {
     sport,

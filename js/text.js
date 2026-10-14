@@ -180,7 +180,7 @@ export function thisWeekSentence(m) {
 
 // The summary's Plan line: the countdown, then next week (or, on the 1-week tab, the
 // rest of this week).
-function planSummary(m) {
+export function planSummary(m) {
   if (!m.plan.workouts.length && !m.nextRace) return '';
   const week = m.range.calendar ? thisWeekSentence(m) : weekSentence(m, m.nextWeek);
   return [countdown(m), week].filter(Boolean).join(' ');
@@ -221,14 +221,20 @@ function missingSettingNotes(m) {
     .map(([k, n]) => `${plural(n, ['planned workout has', 'planned workouts have'])} no load estimate because intervals.icu has no ${what[k]}.`);
 }
 
+// How planned loads are estimated, and any that can't be. Empty without a plan.
+export function planNotes(m) {
+  return m.plan.workouts.some((w) => w.kind !== 'rest') ? [calibrationText(m), ...missingSettingNotes(m)] : [];
+}
+
 // Plain sentences, for places without formatting (the JSON export).
 export function summarySentences(m) {
   const { lead, lines } = summary(m);
   return [lead, ...lines.map((l) => l.text.replace(/\*\*/g, ''))];
 }
 
-// Notes about data quality, shown on the dashboard and repeated in the report.
-export function dataNotes(m) {
+// Notes about data quality, shown on the dashboard and repeated in the report. The
+// page shows the plan's notes (plan: false here) in the plan section instead.
+export function dataNotes(m, { plan = true } = {}) {
   const notes = [];
   if (!m.zones.settingsFound) {
     notes.push(`No ${m.sport.label.toLowerCase()} sport settings found in intervals.icu, so zones may be missing.`);
@@ -260,6 +266,6 @@ export function dataNotes(m) {
   if (other.length) {
     notes.push(`Not shown: ${other.map(([type, n]) => `${n} ${type}`).join(', ')}.`);
   }
-  if (m.plan.workouts.some((w) => w.kind !== 'rest')) notes.push(calibrationText(m), ...missingSettingNotes(m));
+  if (plan) notes.push(...planNotes(m));
   return notes;
 }

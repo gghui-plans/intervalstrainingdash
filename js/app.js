@@ -1,11 +1,16 @@
 // Page wiring: controls, loading, rendering and export.
 
 import { DEFAULT_WEEKS, SPORTS } from './config.js';
-import { addDays, longDay, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
+import { addDays, eachDay, longDay, rangeLabel, shortDate, startOfWeek, today, weekday } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
 import { drawFitness, drawLoad, drawLoadLine, drawVolume, drawVolumeLine, drawZones, fitnessPoints } from './charts.js';
+import {
+  PHASES, decodeShare, emptyPlan, encodeShare, estimateLoad, newId, paceClock, paceUnit, parsePace, validatePlan, weeksOut,
+} from './plan.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
-import { EXPLAIN, about, change, dataNotes, fmt, formState, periodName, signed, summary } from './text.js';
+import {
+  EXPLAIN, about, change, dataNotes, fmt, formState, periodName, planNotes, planSummary, signed, summary, zoneLabel,
+} from './text.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +28,8 @@ const state = {
   measure: 'distance',
   zone: 'hr',
   plan: demo ? null : store.getPlan(), // demo: an in-memory sample, set in start()
+  planWeeks: 5, // weeks the plan list shows, from the current one
+  sharedPlan: null, // a plan from a share link, waiting for "Use this plan" or "Keep mine"
   data: null,
   model: null,
 };
@@ -56,7 +63,7 @@ async function load({ force = false } = {}) {
   setBusy(true);
   try {
     const data = await store.ensureData(c, win.from, win.to, { force });
-    hideNotice();
+    if (!state.sharedPlan) hideNotice(); // a shared-plan question stays until it's answered
     render(data);
   } catch (err) {
     showNotice(err.message, err.kind === 'auth' ? { label: 'Open settings', onClick: openSettings } : null);
@@ -92,6 +99,7 @@ function render(data) {
   renderUpdated(data);
   renderSummary(m);
   renderCharts(m);
+  renderPlan(m);
   $('report-preview').textContent = buildMarkdown(m, data.athlete.name);
 }
 
@@ -129,7 +137,8 @@ function renderSummary(m) {
   $('summary-lines').innerHTML = lines
     .map(({ label, text }) => `<div><dt>${label}</dt><dd>${emphasis(text)}</dd></div>`)
     .join('');
-  $('notes').replaceChildren(...dataNotes(m).map((n) => Object.assign(document.createElement('li'), { textContent: n })));
+  // Notes about the plan's estimates sit with the plan, further down.
+  $('notes').replaceChildren(...dataNotes(m, { plan: false }).map((n) => Object.assign(document.createElement('li'), { textContent: n })));
   renderTiles(m);
   renderGauge(m);
 }
@@ -384,14 +393,321 @@ function renderZones(m) {
   $('chart-zones').setAttribute('aria-label', kind === 'pace' ? 'Time in pace zones per week' : 'Time in heart-rate zones per week');
 }
 
+// ---------- Plan ----------
+// The week list from the current week on, and the workout and race editors. Only the
+// selected sport's workouts and races show. Every change saves, then re-renders the
+// whole page so the summary, charts, report and list stay in step.
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+
+function savePlan(plan) {
+  state.plan = plan;
+  if (!demo && !store.setPlan(plan)) {
+    toast("The plan couldn't be saved in this browser (storage full or blocked). Export it to keep a copy.");
+  }
+  render(state.data);
+}
+
+const sessionsText = (m, n) => `${n} ${m.sport.noun[n === 1 ? 0 : 1]}`;
+const weekDates = (from, to) =>
+  from.slice(5, 7) === to.slice(5, 7) ? `${shortDate(from)} – ${+to.slice(8, 10)}` : `${shortDate(from)} – ${shortDate(to)}`;
+
+function weeksOutText(race, from, to) {
+  if (!race || race.date < from) return '';
+  if (race.date <= to) return 'Race week';
+  const n = weeksOut(from, race.date);
+  return `${n} week${n === 1 ? '' : 's'} out`;
+}
+
+function chipHtml(w, ctx) {
+  const parts = [esc(w.title || 'Workout')];
+  if (w.kind !== 'rest') {
+    parts.push(`${fmt(w.estimate.minutes)} min`);
+    if (w.estimate.load != null) parts.push(`~${fmt(w.estimate.load)}`);
+  }
+  let status = '';
+  let cls = 'chip';
+  if (w.kind === 'rest') cls += ' rest';
+  if (w.key) cls += ' key';
+  if (w.kind !== 'rest' && w.done.length) {
+    cls += ' done';
+    status = '<span class="tick" aria-label="done">✓</span>';
+  } else if (w.kind !== 'rest' && w.date < ctx.now) {
+    cls += ' missed';
+    status = '<span class="missed-mark">missed</span>';
+  }
+  return `<button type="button" class="${cls}" data-workout="${esc(w.id)}">${status}<span>${parts.join(' · ')}</span></button>`;
+}
+
+function renderPlan(m) {
+  const ctx = m.planContext;
+  const lede = planSummary(m);
+  $('plan-lede').innerHTML = lede
+    ? emphasis(lede)
+    : `Nothing planned for ${m.sport.label.toLowerCase()} yet. Add workouts to see what they do to your fitness.`;
+  const keep = demo
+    ? 'Demo plan: changes last until you reload.'
+    : 'Saved in this browser only. Export it or copy a share link now and then to keep a copy.';
+  $('plan-note').innerHTML = [...planNotes(m), keep].map((n) => `<span>${esc(n)}</span>`).join(' ');
+
+  const html = [];
+  for (let k = 0; k < state.planWeeks; k++) {
+    const w = ctx.week(addDays(ctx.currentStart, 7 * k));
+    const out = weeksOutText(m.nextRace, w.from, w.to);
+    const p = w.planned;
+    const totals = p.sessions
+      ? `${sessionsText(m, p.sessions)} · ${fmt(p.hours, 1)} h · load ~${about(p.load)}`
+      : 'Nothing planned';
+    const verdict = p.sessions && w.verdict !== 'first weeks' ? `<span class="verdict ${w.verdict}">${w.verdict}</span>` : '';
+    const flags = w.flags.map((f) => `<span class="flag">${f}</span>`).join('');
+    const phase = w.phase || '';
+    const phaseOptions = ['', ...PHASES].map((ph) => `<option value="${ph}"${ph === phase ? ' selected' : ''}>${ph ? ph[0].toUpperCase() + ph.slice(1) : 'Phase'}</option>`).join('');
+
+    const days = eachDay(w.from, w.to).map((d) => {
+      const items = [
+        ...m.plan.races.filter((r) => r.date === d).map((r) => `<button type="button" class="race-badge" data-race="${esc(r.id)}">${esc(r.name)} · ${r.priority} race</button>`),
+        ...m.plan.workouts.filter((x) => x.date === d).map((x) => chipHtml(x, ctx)),
+      ];
+      const cls = ['day', d < ctx.now ? 'past' : '', d === ctx.now ? 'today' : ''].filter(Boolean).join(' ');
+      return `<li class="${cls}">
+          <span class="day-label"><span class="dow">${weekday(d)}</span> <span class="dom">${+d.slice(8, 10)}</span></span>
+          <span class="day-items">${items.join('')}</span>
+          <button type="button" class="add-day" data-add="${d}" aria-label="Add a workout on ${longDay(d)}">+</button>
+        </li>`;
+    });
+
+    html.push(`<section class="plan-week${w.current ? ' current' : ''}">
+        <header class="week-head">
+          <div class="week-title"><strong>${k === 0 ? 'This week' : k === 1 ? 'Next week' : weekDates(w.from, w.to)}</strong>
+            <span class="week-sub">${k < 2 ? weekDates(w.from, w.to) : ''}${k < 2 && out ? ' · ' : ''}${out}</span></div>
+          <div class="week-totals">${totals}${verdict}${flags}</div>
+          <div class="week-tools">
+            <select class="phase" data-phase="${w.from}" aria-label="Training phase, week of ${shortDate(w.from)}">${phaseOptions}</select>
+            <button type="button" class="btn btn-quiet btn-small" data-copy-week="${w.from}">Copy last week</button>
+          </div>
+        </header>
+        <ul class="days">${days.join('')}</ul>
+      </section>`);
+  }
+  $('plan-weeks').innerHTML = html.join('');
+}
+
+// ----- Workout editor -----
+
+const wf = $('workout-form');
+let editing = null; // { id, sport, kind, target } while the workout dialog is open
+
+const DEFAULTS = { minutes: 45, reps: 6, workMin: 3, restMin: 2, warmMin: 15, coolMin: 10 };
+
+function zoneOptions(hr) {
+  const b = hr.bounds || [];
+  const n = b.length || hr.count || 5;
+  return Array.from({ length: n }, (_, i) => {
+    let band = '';
+    if (b.length) band = i === 0 ? ` · up to ${b[0]} bpm` : i === n - 1 ? ` · ${b[i - 1] + 1}+ bpm` : ` · ${b[i - 1] + 1}–${b[i]} bpm`;
+    return `<option value="${i + 1}">${esc(zoneLabel(hr, i))}${band}</option>`;
+  }).join('');
+}
+
+function openWorkout(id, date) {
+  const m = state.model;
+  const w = id ? state.plan.workouts.find((x) => x.id === id) : null;
+  const sport = SPORTS[w?.sport || state.sport];
+  editing = { id: w?.id || null, sport: w?.sport || state.sport, kind: w?.kind || 'steady', target: w?.target?.type || 'hrZone' };
+  if (editing.target === 'pace' && !sport.hasPaceZones) editing.target = 'hrZone';
+
+  wf.reset();
+  $('workout-heading').textContent = w ? 'Edit workout' : 'Add workout';
+  $('delete-workout').hidden = !w;
+  $('workout-error').hidden = true;
+  wf.date.value = w?.date || date || today();
+  wf.title.value = w?.title || '';
+  for (const k of Object.keys(DEFAULTS)) wf[k].value = w?.[k] || DEFAULTS[k];
+  wf.zone.innerHTML = zoneOptions(m.zones.hr);
+  wf.zone.value = String(w?.target?.type === 'hrZone' ? w.target.value : 2);
+  wf.hr.value = w?.target?.type === 'hr' ? w.target.value : '';
+  const units = m.zones.pace.units;
+  wf.pace.value = w?.target?.type === 'pace' ? paceClock(w.target.value, units) : '';
+  $('pace-unit').textContent = `/${paceUnit(units)}`;
+  wf.key.checked = !!w?.key;
+  wf.notes.value = w?.notes || '';
+  $('target-toggle').querySelector('[data-target="pace"]').hidden = !sport.hasPaceZones;
+
+  const titles = new Set([
+    ...state.plan.workouts.filter((x) => x.sport === editing.sport).map((x) => x.title),
+    ...m.activities.slice(-30).map((a) => a.name),
+  ]);
+  $('title-options').innerHTML = [...titles].filter(Boolean).slice(0, 20).map((t) => `<option value="${esc(t)}">`).join('');
+
+  syncWorkoutForm();
+  $('workout-dialog').showModal();
+}
+
+function syncWorkoutForm() {
+  for (const b of document.querySelectorAll('[data-kind]')) b.setAttribute('aria-checked', b.dataset.kind === editing.kind);
+  for (const b of document.querySelectorAll('[data-target]')) b.setAttribute('aria-checked', b.dataset.target === editing.target);
+  for (const el of wf.querySelectorAll('[data-show]')) {
+    const show = el.dataset.show;
+    el.hidden = show === 'target' ? editing.kind === 'rest' : show !== editing.kind;
+  }
+  for (const el of wf.querySelectorAll('[data-show-target]')) el.hidden = el.dataset.showTarget !== editing.target;
+  updateEstimate();
+}
+
+const num = (input) => (input.value === '' ? 0 : Number(input.value));
+
+// The workout as the form describes it, and what's wrong with it, if anything.
+function readWorkout() {
+  const kind = editing.kind;
+  const w = {
+    id: editing.id || newId('w'),
+    date: wf.date.value,
+    sport: editing.sport,
+    kind,
+    title: wf.title.value.trim(),
+    key: wf.key.checked,
+    notes: wf.notes.value.trim(),
+  };
+  let error = !w.date ? 'Pick a date.' : !w.title ? 'Give the workout a title.' : '';
+  if (kind === 'rest') return { workout: { ...w, minutes: 0, target: null }, error };
+
+  let value = null;
+  if (editing.target === 'hrZone') value = Number(wf.zone.value) || null;
+  if (editing.target === 'hr') value = num(wf.hr) >= 60 && num(wf.hr) <= 230 ? num(wf.hr) : null;
+  if (editing.target === 'pace') value = parsePace(wf.pace.value, state.model.zones.pace.units);
+  w.target = value ? { type: editing.target, value } : null;
+
+  if (kind === 'steady') {
+    w.minutes = num(wf.minutes);
+    if (!error && !(w.minutes > 0)) error = 'Set how many minutes.';
+  } else {
+    for (const k of ['reps', 'workMin', 'restMin', 'warmMin', 'coolMin']) w[k] = num(wf[k]);
+    w.minutes = 0;
+    if (!error && !(w.reps > 0 && w.workMin > 0)) error = 'Set the number of reps and how long each one is.';
+  }
+  if (!error && !w.target) {
+    error = editing.target === 'pace' ? 'Set a pace like 4:45.' : editing.target === 'hr' ? 'Set a heart rate in bpm.' : 'Pick a zone.';
+  }
+  return { workout: w, error };
+}
+
+// "around Z3": the heart-rate or pace zone a target falls in.
+function zoneOf(target, zones) {
+  if (target.type === 'hrZone') return `Z${target.value}`;
+  if (target.type === 'hr') {
+    const i = (zones.hr.bounds || []).findIndex((b) => target.value <= b);
+    return i < 0 ? '' : `Z${i + 1}`;
+  }
+  const tp = zones.pace.thresholdPace;
+  const i = tp ? (zones.pace.pcts || []).findIndex((p) => (target.value / tp) * 100 <= p) : -1;
+  return i < 0 ? '' : `pace Z${i + 1}`;
+}
+
+function updateEstimate() {
+  const m = state.model;
+  const { workout } = readWorkout();
+  const est = estimateLoad(workout, m.planContext.zones, m.calibration);
+  const sport = m.sport.label.toLowerCase();
+  const missing = {
+    lthr: `No estimate: intervals.icu has no threshold heart rate for ${sport}.`,
+    hrZones: `No estimate: intervals.icu has no heart-rate zones for ${sport}.`,
+    thresholdPace: `No estimate: intervals.icu has no threshold pace for ${sport}.`,
+    target: 'Set a target to see the estimated load.',
+  };
+  let text;
+  if (workout.kind === 'rest') text = 'A rest day: no load.';
+  else if (est.load == null) text = missing[est.missing] || '';
+  else {
+    const zone = zoneOf(workout.target, m.planContext.zones);
+    text = `About ${fmt(est.load)} load · ${fmt(est.minutes)} min${zone ? ` · around ${zone}` : ''}`;
+  }
+  $('workout-estimate').textContent = text;
+}
+
+// ----- Race editor -----
+
+const rf = $('race-form');
+let editingRace = null; // { id, priority }
+
+function openRace(id) {
+  const r = id ? state.plan.races.find((x) => x.id === id) : null;
+  editingRace = { id: r?.id || null, priority: r?.priority || 'A' };
+  rf.reset();
+  $('race-heading').textContent = r ? 'Edit race' : 'Add race';
+  $('delete-race').hidden = !r;
+  $('race-error').hidden = true;
+  $('race-sport').innerHTML = Object.entries(SPORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('');
+  rf.name.value = r?.name || '';
+  rf.date.value = r?.date || '';
+  rf.sport.value = r?.sport || state.sport;
+  syncRaceForm();
+  $('race-dialog').showModal();
+}
+
+function syncRaceForm() {
+  for (const b of document.querySelectorAll('[data-priority]')) b.setAttribute('aria-checked', b.dataset.priority === editingRace.priority);
+}
+
+// ----- Plan actions -----
+
+function copyLastWeek(from) {
+  const prevFrom = addDays(from, -7);
+  const source = state.plan.workouts.filter((w) => w.sport === state.sport && w.date >= prevFrom && w.date < from);
+  if (!source.length) return toast('Nothing was planned the week before to copy.');
+  const copies = source.map((w) => ({ ...w, id: newId('w'), date: addDays(w.date, 7) }));
+  savePlan({ ...state.plan, workouts: [...state.plan.workouts, ...copies] });
+  toast(`Copied ${copies.length} workout${copies.length === 1 ? '' : 's'} from the week before.`);
+}
+
+function setPhase(from, phase) {
+  const weekPhases = { ...state.plan.weekPhases };
+  if (phase) weekPhases[from] = phase;
+  else delete weekPhases[from];
+  savePlan({ ...state.plan, weekPhases });
+}
+
+const planCounts = (p) =>
+  `${p.workouts.length} workout${p.workouts.length === 1 ? '' : 's'} and ${p.races.length} race${p.races.length === 1 ? '' : 's'}`;
+
+async function sharePlan() {
+  const value = await encodeShare(state.plan);
+  const url = `${location.origin}${location.pathname}${location.search}#plan=${value}`;
+  const ok = await copyText(url);
+  toast(ok ? `Share link copied. It carries ${planCounts(state.plan)}.` : "Couldn't copy the link. Use Export plan instead.");
+}
+
+// A plan arriving in a share link: in demo it simply replaces the sample; otherwise
+// ask before replacing the saved plan. The hash is removed either way.
+async function receiveSharedPlan() {
+  const match = location.hash.match(/^#plan=(.+)$/);
+  if (!match) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  const { plan, error } = await decodeShare(match[1]);
+  if (error) return showNotice(error);
+  if (demo) {
+    state.plan = plan;
+    return toast(`Showing the shared plan: ${planCounts(plan)}.`);
+  }
+  state.sharedPlan = plan;
+  const done = () => {
+    state.sharedPlan = null;
+    hideNotice();
+  };
+  showNotice(`This link carries a plan with ${planCounts(plan)}.`, [
+    { label: 'Use this plan', onClick: () => (done(), savePlan(plan), toast('Using the shared plan.')) },
+    { label: 'Keep mine', onClick: done },
+  ]);
+}
+
 // ---------- Notices ----------
 
+// action is one { label, onClick } or a list of them.
 function showNotice(text, action) {
   const el = $('notice');
   el.replaceChildren(text);
-  if (action) {
-    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: action.label });
-    b.addEventListener('click', action.onClick);
+  for (const a of [action || []].flat()) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: a.label });
+    b.addEventListener('click', a.onClick);
     el.append(b);
   }
   el.hidden = false;
@@ -544,6 +860,125 @@ $('download-json').addEventListener('click', () => {
   download(buildJson(state.model), fileName(state.model, 'json'), 'application/json;charset=utf-8');
 });
 
+// Plan section
+$('add-workout').addEventListener('click', () => state.model && openWorkout(null));
+$('add-race').addEventListener('click', () => state.model && openRace(null));
+$('more-weeks').addEventListener('click', () => {
+  state.planWeeks += 4;
+  renderPlan(state.model);
+});
+
+$('plan-weeks').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-workout], [data-add], [data-race], [data-copy-week]');
+  if (!el || !state.model) return;
+  if (el.dataset.workout) openWorkout(el.dataset.workout);
+  else if (el.dataset.add) openWorkout(null, el.dataset.add);
+  else if (el.dataset.race) openRace(el.dataset.race);
+  else copyLastWeek(el.dataset.copyWeek);
+});
+$('plan-weeks').addEventListener('change', (e) => {
+  if (e.target.dataset.phase) setPhase(e.target.dataset.phase, e.target.value);
+});
+
+const menu = $('plan-menu');
+const setMenu = (open) => {
+  menu.hidden = !open;
+  $('plan-more').setAttribute('aria-expanded', open);
+};
+$('plan-more').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setMenu(menu.hidden);
+  if (!menu.hidden) menu.querySelector('button').focus();
+});
+document.addEventListener('click', (e) => !menu.contains(e.target) && setMenu(false));
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !menu.hidden && (setMenu(false), $('plan-more').focus()));
+menu.addEventListener('click', () => setMenu(false));
+
+$('export-plan').addEventListener('click', () =>
+  download(JSON.stringify(state.plan, null, 2), `training-plan-${today()}.json`, 'application/json;charset=utf-8'));
+$('import-plan').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // so choosing the same file again still fires
+  if (!file) return;
+  let result;
+  try {
+    result = validatePlan(JSON.parse(await file.text()));
+  } catch {
+    result = { error: "That file isn't a training plan." };
+  }
+  if (result.error) return toast(result.error);
+  if (!confirm(`This file holds ${planCounts(result.plan)}. Replace your current plan with it?`)) return;
+  savePlan(result.plan);
+  toast(`Plan imported: ${planCounts(result.plan)}.`);
+});
+$('share-plan').addEventListener('click', sharePlan);
+$('delete-plan').addEventListener('click', () => {
+  if (!state.plan.workouts.length && !state.plan.races.length) return toast('There is no plan to delete.');
+  if (!confirm(`Delete the whole plan, ${planCounts(state.plan)}, for every sport? Export it first if you might want it back.`)) return;
+  savePlan(emptyPlan());
+  toast('Plan deleted.');
+});
+
+// Workout dialog
+for (const b of document.querySelectorAll('[data-kind]')) {
+  b.addEventListener('click', () => {
+    editing.kind = b.dataset.kind;
+    if (editing.kind === 'rest' && !wf.title.value.trim()) wf.title.value = 'Rest';
+    syncWorkoutForm();
+  });
+}
+for (const b of document.querySelectorAll('[data-target]')) {
+  b.addEventListener('click', () => {
+    editing.target = b.dataset.target;
+    syncWorkoutForm();
+  });
+}
+wf.addEventListener('input', updateEstimate);
+wf.addEventListener('change', updateEstimate);
+wf.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const { workout, error } = readWorkout();
+  if (error) {
+    $('workout-error').textContent = error;
+    $('workout-error').hidden = false;
+    return;
+  }
+  const others = state.plan.workouts.filter((w) => w.id !== workout.id);
+  $('workout-dialog').close();
+  savePlan({ ...state.plan, workouts: [...others, workout] });
+});
+$('cancel-workout').addEventListener('click', () => $('workout-dialog').close());
+$('delete-workout').addEventListener('click', () => {
+  $('workout-dialog').close();
+  savePlan({ ...state.plan, workouts: state.plan.workouts.filter((w) => w.id !== editing.id) });
+});
+
+// Race dialog
+for (const b of document.querySelectorAll('[data-priority]')) {
+  b.addEventListener('click', () => {
+    editingRace.priority = b.dataset.priority;
+    syncRaceForm();
+  });
+}
+rf.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const race = { id: editingRace.id || newId('r'), name: rf.name.value.trim(), date: rf.date.value, sport: rf.sport.value, priority: editingRace.priority };
+  const error = !race.name ? 'Give the race a name.' : !race.date ? 'Pick the race date.' : '';
+  if (error) {
+    $('race-error').textContent = error;
+    $('race-error').hidden = false;
+    return;
+  }
+  $('race-dialog').close();
+  savePlan({ ...state.plan, races: [...state.plan.races.filter((r) => r.id !== race.id), race] });
+});
+$('cancel-race').addEventListener('click', () => $('race-dialog').close());
+$('delete-race').addEventListener('click', () => {
+  $('race-dialog').close();
+  savePlan({ ...state.plan, races: state.plan.races.filter((r) => r.id !== editingRace.id) });
+});
+
 // Charts read colours from CSS, so redraw when the light/dark scheme flips.
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => state.model && renderCharts(state.model));
 
@@ -555,6 +990,12 @@ async function start() {
     store.useData(makeDemoData());
     state.plan = makeDemoPlan(state.weekStart);
   }
+  await receiveSharedPlan();
+  // A share link opened in a tab already showing this page only changes the hash.
+  window.addEventListener('hashchange', async () => {
+    await receiveSharedPlan();
+    render(state.data);
+  });
   await new Promise((resolve) => (window.Chart ? resolve() : window.addEventListener('load', resolve, { once: true })));
   load();
 }

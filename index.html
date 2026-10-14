@@ -164,6 +164,32 @@
       </div>
       <p class="footnote" id="footnote"></p>
 
+      <section class="plan" id="plan" aria-labelledby="plan-title">
+        <header class="plan-head">
+          <div class="plan-intro">
+            <h2 id="plan-title">Plan</h2>
+            <p class="plan-lede" id="plan-lede"></p>
+          </div>
+          <div class="plan-actions">
+            <button type="button" class="btn btn-primary" id="add-workout">Add workout</button>
+            <button type="button" class="btn" id="add-race">Add race</button>
+            <div class="menu">
+              <button type="button" class="btn btn-quiet" id="plan-more" aria-haspopup="true" aria-expanded="false" aria-controls="plan-menu">More</button>
+              <div class="menu-list" id="plan-menu" hidden>
+                <button type="button" id="export-plan">Export plan</button>
+                <button type="button" id="import-plan">Import plan</button>
+                <button type="button" id="share-plan">Copy share link</button>
+                <button type="button" class="danger" id="delete-plan">Delete plan</button>
+              </div>
+            </div>
+            <input type="file" id="import-file" accept="application/json,.json" hidden>
+          </div>
+        </header>
+        <p class="plan-note" id="plan-note"></p>
+        <div class="plan-weeks" id="plan-weeks"></div>
+        <button type="button" class="btn btn-quiet more-weeks" id="more-weeks">Show four more weeks</button>
+      </section>
+
       <section class="export">
         <div class="export-head">
           <svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5Z M8 8h8M8 11.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -205,6 +231,76 @@
         <span class="spacer"></span>
         <button type="button" class="btn btn-quiet" id="cancel-settings">Cancel</button>
         <button type="submit" class="btn btn-primary" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="settings plan-dialog" id="workout-dialog" aria-labelledby="workout-heading">
+    <form class="creds-form" id="workout-form" method="dialog" novalidate>
+      <h2 id="workout-heading">Add workout</h2>
+      <label>Date <input type="date" name="date" required></label>
+      <div class="field">
+        <span class="field-label" id="kind-label">Kind</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="kind-label" id="kind-toggle">
+          <button type="button" role="radio" data-kind="steady">Steady</button>
+          <button type="button" role="radio" data-kind="intervals">Intervals</button>
+          <button type="button" role="radio" data-kind="rest">Rest</button>
+        </div>
+      </div>
+      <label>Title <input name="title" list="title-options" autocomplete="off" required></label>
+      <datalist id="title-options"></datalist>
+      <label data-show="steady">Minutes <input type="number" name="minutes" min="1" max="600" step="1" inputmode="numeric"></label>
+      <div class="interval-fields" data-show="intervals">
+        <label>Reps <input type="number" name="reps" min="1" max="50" inputmode="numeric"></label>
+        <label>Work, min <input type="number" name="workMin" min="0.5" max="120" step="0.5" inputmode="decimal"></label>
+        <label>Easy between, min <input type="number" name="restMin" min="0" max="60" step="0.5" inputmode="decimal"></label>
+        <label>Warm-up, min <input type="number" name="warmMin" min="0" max="120" step="1" inputmode="numeric"></label>
+        <label>Cool-down, min <input type="number" name="coolMin" min="0" max="120" step="1" inputmode="numeric"></label>
+      </div>
+      <div class="field" data-show="target">
+        <span class="field-label" id="target-label">Target</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="target-label" id="target-toggle">
+          <button type="button" role="radio" data-target="hrZone">Zone</button>
+          <button type="button" role="radio" data-target="hr">Heart rate</button>
+          <button type="button" role="radio" data-target="pace">Pace</button>
+        </div>
+        <select name="zone" aria-label="Heart-rate zone" data-show-target="hrZone"></select>
+        <label class="inline" data-show-target="hr"><input type="number" name="hr" min="60" max="230" inputmode="numeric" aria-label="Heart rate"> bpm</label>
+        <label class="inline" data-show-target="pace"><input name="pace" placeholder="4:45" inputmode="numeric" autocomplete="off" aria-label="Pace"> <span id="pace-unit">/km</span></label>
+      </div>
+      <label class="check"><input type="checkbox" name="key"> Key session, highlighted on the calendar</label>
+      <label>Notes <textarea name="notes" rows="2"></textarea></label>
+      <p class="estimate" id="workout-estimate" aria-live="polite"></p>
+      <p class="form-error" id="workout-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-danger" id="delete-workout">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="cancel-workout">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="settings plan-dialog" id="race-dialog" aria-labelledby="race-heading">
+    <form class="creds-form" id="race-form" method="dialog" novalidate>
+      <h2 id="race-heading">Add race</h2>
+      <label>Name <input name="name" autocomplete="off" required placeholder="Winter 10K"></label>
+      <label>Date <input type="date" name="date" required></label>
+      <label>Sport <select name="sport" id="race-sport"></select></label>
+      <div class="field">
+        <span class="field-label" id="priority-label">Priority</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="priority-label" id="priority-toggle">
+          <button type="button" role="radio" data-priority="A">A race</button>
+          <button type="button" role="radio" data-priority="B">B race</button>
+        </div>
+        <p class="hint">The countdown runs to your next A race.</p>
+      </div>
+      <p class="form-error" id="race-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-danger" id="delete-race">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" id="cancel-race">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
   </dialog>
