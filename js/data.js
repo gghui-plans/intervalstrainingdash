@@ -265,11 +265,14 @@ export function planContext(data, sportKey, plan, weekStart, now = today()) {
 
   return {
     sport,
+    sportKey,
     zones,
     calibration,
     workouts,
     races,
     allRaces: [...plan.races].sort((a, b) => (a.date < b.date ? -1 : 1)), // every sport's
+    activities: inSport,
+    doneOn, // this sport's activities by date
     weekPhases: plan.weekPhases || {},
     nextRace: race,
     now,

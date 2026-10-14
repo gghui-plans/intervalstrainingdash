@@ -449,6 +449,7 @@ function renderPlan(m) {
     ? 'Demo plan: changes last until you reload.'
     : 'Saved in this browser only. Export it or copy a share link now and then to keep a copy.';
   $('plan-note').innerHTML = [...planNotes(m), keep].map((n) => `<span>${esc(n)}</span>`).join(' ');
+  $('print-calendar').href = `calendar.html?${demo ? 'demo&' : ''}sport=${m.sportKey}`;
 
   const html = [];
   for (let k = 0; k < state.planWeeks; k++) {

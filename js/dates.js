@@ -35,6 +35,19 @@ export const weekday = (d) => WEEKDAYS[new Date(toMs(d)).getUTCDay()];
 export const dayLabel = (d) => `${weekday(d)} ${+d.slice(8, 10)}`; // "Mon 5"
 export const longDay = (d) => `${weekday(d)} ${shortDate(d)}`; // "Mon Oct 5"
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export const monthStart = (d) => d.slice(0, 8) + '01';
+export const monthName = (d) => MONTH_NAMES[+d.slice(5, 7) - 1]; // "October"
+
+// The first day of the month n months after d's month (n may be negative).
+export function addMonths(d, n) {
+  const m = +d.slice(0, 4) * 12 + (+d.slice(5, 7) - 1) + n;
+  return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}-01`;
+}
+
+export const monthEnd = (d) => addDays(addMonths(d, 1), -1);
+
 // The first day of the calendar week containing d. startDow: 0 Sunday, 1 Monday.
 export function startOfWeek(d, startDow) {
   const dow = new Date(toMs(d)).getUTCDay();

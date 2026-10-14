@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Calendar</title>
+  <meta name="description" content="Your training plan as a printable monthly calendar.">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/print.css">
+  <script type="module" src="js/calendar.js"></script>
+</head>
+<body class="calendar-page">
+  <header class="cal-toolbar no-print">
+    <div class="cal-toolbar-row">
+      <a class="btn btn-quiet" id="back" href="./">← Dashboard</a>
+      <div class="segmented" role="radiogroup" aria-label="Sport" id="cal-sport">
+        <button type="button" role="radio" data-calsport="running">Running</button>
+        <button type="button" role="radio" data-calsport="paddling">Paddling</button>
+      </div>
+      <div class="month-nav">
+        <button type="button" class="btn btn-quiet" id="prev-month" aria-label="Previous month">‹</button>
+        <span id="month-label" aria-live="polite"></span>
+        <button type="button" class="btn btn-quiet" id="next-month" aria-label="Next month">›</button>
+      </div>
+      <div class="segmented small" role="radiogroup" aria-label="Months to print" id="cal-months">
+        <button type="button" role="radio" data-months="1">1 month</button>
+        <button type="button" role="radio" data-months="2">2</button>
+        <button type="button" role="radio" data-months="3">3</button>
+      </div>
+      <button type="button" class="btn btn-primary" id="print">Print or save as PDF</button>
+    </div>
+    <p class="hint">In the print dialog choose Letter, Landscape, and turn off headers and footers.</p>
+  </header>
+  <main id="pages" class="pages"></main>
+</body>
+</html>

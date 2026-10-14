@@ -450,11 +450,11 @@ body {
   display: grid; padding: 6px; border-radius: 10px;
   background: var(--tooltip-bg); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
 }
-.menu-list button {
-  font: inherit; font-size: 0.9rem; text-align: left; color: var(--text-1);
+.menu-list button, .menu-list a {
+  font: inherit; font-size: 0.9rem; text-align: left; color: var(--text-1); text-decoration: none;
   background: none; border: 0; border-radius: 6px; padding: 9px 10px; cursor: pointer;
 }
-.menu-list button:hover, .menu-list button:focus-visible { background: var(--surface-2); }
+.menu-list button:hover, .menu-list button:focus-visible, .menu-list a:hover, .menu-list a:focus-visible { background: var(--surface-2); }
 .menu-list .danger { color: var(--danger); }
 
 /* Weeks */
