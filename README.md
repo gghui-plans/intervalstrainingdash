@@ -3,6 +3,7 @@
 A free, static page that turns your [intervals.icu](https://intervals.icu) data into a plain-language training picture for **running** and **paddling**, and exports it as a report to paste into Claude for coaching.
 
 - One sport at a time, a summary paragraph, and four weekly charts: load, distance/time, time in zones, and fitness/fatigue/form.
+- A training plan you write here: what it does to your fitness, a build/maintain/recover call for each week, a race countdown, and a monthly calendar to print.
 - **Copy report** puts Markdown with a coaching prompt on your clipboard. **Download report** saves the same Markdown as a `.md` file, and **Download data** saves the weekly rollups and activity list as `.json`.
 - No accounts and no server. Your intervals.icu API key stays in your browser and is sent only to intervals.icu.
 
@@ -15,6 +16,18 @@ Try it without an account: open the page with `?demo` on the end of the address.
 3. Make sure intervals.icu has your **heart-rate zones** for each sport, and a **threshold pace** for running. Without them the zone chart stays empty, and the page says why.
 
 Activities that reach intervals.icu only through Strava can't be read through its API. Connect your watch (Garmin, Coros, Suunto, Polar…) to intervals.icu directly.
+
+## Planning
+
+The **Plan** section, below the charts, holds the workouts you intend to do and your races. Add a workout with **Add workout** or a day's **+**: steady, intervals (reps × work, with easy recoveries, warm-up and cool-down) or rest, with one target, a heart-rate zone, a heart rate or (running only) a pace. Mark key sessions to highlight them on the calendar. **Copy last week** adds the previous week's workouts to the next one.
+
+- **Where plans live.** In this browser only (localStorage), and nowhere else. intervals.icu stays read-only: the page never writes to it, and its own calendar isn't read. "Forget key and data" in Settings leaves the plan alone; **More → Delete plan** removes it.
+- **Keeping a copy.** Clearing the browser's site data deletes the plan, so use **More → Export plan** now and then. It saves a `.json` file that **Import plan** reads back. **Copy share link** puts the whole plan in a link, for another device or a friend. Opening it asks before replacing the plan that's there.
+- **Planned load** is estimated from each workout's time and target effort, using the threshold heart rate and threshold pace in your intervals.icu sport settings, then scaled to match intervals.icu's own load for your last 90 days of sessions. The plan section says by how much. Treat it as roughly right, and more roughly for paddling, where load comes from heart rate.
+- **The forecast** carries fitness, fatigue and form forward through the planned loads (dashed on the fitness chart). Each week is called **build**, **maintain** or **recover** against your average of the last four completed weeks, with a warning for big jumps or form below −30.
+- **Races** are A or B. The countdown runs to your next A race; the forecast reaches to it when it's within eight weeks.
+
+**Printing the calendar.** Open **More → Print calendar**, pick the sport, the month and how many months, then **Print or save as PDF**. In the print dialog choose Letter, Landscape, and turn off headers and footers. On iPhone and iPad use Share → Print. Each month prints on one page: workouts with checkboxes, days to the race, weekly totals and the build/maintain/recover call, and for days already past, a tick with what you actually did.
 
 ## Run your own copy
 
@@ -31,17 +44,20 @@ npx serve .
 | File | Role |
 | --- | --- |
 | `index.html`, `css/styles.css` | The page. Mobile stacks everything, with the summary first. Desktop puts the charts in a 2×2 grid. |
+| `calendar.html`, `css/print.css` | The printable monthly calendar, one letter-landscape page per month. |
 | `js/config.js` | What a fork would change: activity types per sport, presets, the coaching prompt, the API base URL. |
 | `js/api.js` | Calls to intervals.icu (Basic auth, username `API_KEY`). |
-| `js/store.js` | localStorage for credentials, preferences and a stripped-down cache, with a daily refresh. |
-| `js/data.js` | Weekly rollups, the previous-period comparison, per-sport fitness/fatigue/form, and zone settings. |
+| `js/store.js` | localStorage for credentials, preferences, a stripped-down cache with a daily refresh, and the plan. |
+| `js/data.js` | Weekly rollups, the previous-period comparison, per-sport fitness/fatigue/form, zone settings, and the plan's weeks and forecast. |
+| `js/plan.js` | Planned-load estimates, calibration, the forecast, weekly verdicts, race countdowns, and the plan's file and share-link formats. |
 | `js/text.js` | The plain-language sentences shared by the page and the report. |
-| `js/charts.js` | The four Chart.js charts. |
+| `js/charts.js` | The four Chart.js charts, with planned load hatched and the forecast dashed. |
 | `js/report.js` | Markdown and JSON export, plus Blob downloads and copying to the clipboard. |
-| `js/demo.js` | Synthetic data for `?demo`. |
+| `js/calendar.js` | Builds the calendar pages from the same data and plan. |
+| `js/demo.js` | Synthetic data and a sample plan for `?demo`. |
 | `spike.html` | Day-one diagnostic. It calls the API from the browser and shows the raw JSON and which fields are present. |
 
-**Data used.** Each activity's `icu_training_load`, `icu_hr_zone_times`, `pace_zone_times`, `distance` and `moving_time`. Zones come from the athlete's `sportSettings`, planned workouts from calendar events (`category=WORKOUT`), and all-sports fitness from wellness `ctl`/`atl`.
+**Data used.** Each activity's `icu_training_load`, `icu_hr_zone_times`, `pace_zone_times`, `distance` and `moving_time`. Zones, threshold heart rate and threshold pace come from the athlete's `sportSettings`, and all-sports fitness from wellness `ctl`/`atl`. Planned workouts come from the plan in this browser, not from intervals.icu.
 
 **Fitness, fatigue and form per sport.** intervals.icu stores fitness and fatigue for all sports combined. To keep the sports separate, this page calculates them for the selected sport from intervals.icu's own load on each session, with the standard 42-day and 7-day weighted averages. It fetches 150 days of extra history so the lines have settled. The report also gives the all-sports values as intervals.icu reports them.
 
