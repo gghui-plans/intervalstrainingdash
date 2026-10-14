@@ -6,11 +6,28 @@
 import { FATIGUE_DAYS, FITNESS_DAYS, SPORTS } from './config.js';
 import { addDays, daysBetween, eachDay } from './dates.js';
 
-export const KINDS = ['steady', 'intervals', 'rest'];
+// 'steady' is shown as "Continuous". Rest is a day (restDays), not a workout; plans
+// saved before that held rest as a workout kind, which normalizePlan converts.
+export const KINDS = ['steady', 'intervals'];
 export const TARGETS = ['hrZone', 'hr', 'pace'];
 export const PHASES = ['base', 'build', 'peak', 'taper', 'recovery'];
 
-export const emptyPlan = () => ({ version: 1, workouts: [], races: [], weekPhases: {} });
+export const emptyPlan = () => ({ version: 1, workouts: [], races: [], restDays: [], weekPhases: {} });
+
+// Fills defaults and turns old rest workouts into rest days.
+export function normalizePlan(plan) {
+  const rest = (plan.workouts || []).filter((w) => w.kind === 'rest').map((w) => w.date);
+  return {
+    version: 1,
+    workouts: (plan.workouts || []).filter((w) => w.kind !== 'rest'),
+    races: plan.races || [],
+    restDays: [...new Set([...(plan.restDays || []), ...rest])].sort(),
+    weekPhases: plan.weekPhases || {},
+  };
+}
+
+// Whether a sport is planned with heart-rate or pace targets (strength isn't).
+export const hasTargets = (sportKey) => SPORTS[sportKey]?.targets !== false;
 
 export const newId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -69,9 +86,16 @@ const factorType = (target) => (target?.type === 'pace' ? 'pace' : 'hr');
 // Estimated load for one planned workout: the time at each intensity, as
 // hours × intensity² × 100 (an hour at threshold is 100), scaled by the athlete's
 // calibration factor. load is null when intervals.icu lacks a needed setting.
+// Sports without targets (strength) use your own average load per hour instead.
 export function estimateLoad(w, zones, calibration = null) {
   const minutes = workoutMinutes(w);
   if (w.kind === 'rest') return { load: 0, minutes: 0, intensity: null, calibrated: true, missing: null };
+  if (!hasTargets(w.sport)) {
+    const ph = calibration?.perHour;
+    return ph?.calibrated
+      ? { load: (minutes / 60) * ph.value, minutes, intensity: null, calibrated: true, missing: null }
+      : { load: null, minutes, intensity: null, calibrated: false, missing: 'history' };
+  }
   const missing = missingFor(w.target, zones) || (w.target ? null : 'target');
   const i = intensity(w.target, zones);
   if (i == null) return { load: null, minutes, intensity: null, calibrated: false, missing };
@@ -119,7 +143,14 @@ export function calibrate(activities, zones, sport, today) {
         .filter((a) => a.distance > 0)
         .map((a) => ({ est: hours(a) * (a.distance / a.moving_time / tp) ** 2 * 100, act: a.icu_training_load }))
     : [];
-  return { hr: ratio(hr), pace: ratio(pace) };
+  // Load per hour, for sports planned by duration alone. Three sessions is enough.
+  const hrs = usable.reduce((t, a) => t + hours(a), 0);
+  const perHour = {
+    value: hrs ? usable.reduce((t, a) => t + a.icu_training_load, 0) / hrs : 0,
+    n: usable.length,
+    calibrated: usable.length >= 3 && hrs > 0,
+  };
+  return { hr: ratio(hr), pace: ratio(pace), perHour };
 }
 
 // ---------- Forecast ----------
@@ -201,8 +232,8 @@ export function validatePlan(obj) {
   if (!Array.isArray(obj.workouts) || !Array.isArray(obj.races)) return { error: 'That file is not a training plan.' };
   for (const w of obj.workouts) {
     const ok =
-      w && isDate(w.date) && SPORTS[w.sport] && KINDS.includes(w.kind) && typeof w.title === 'string' &&
-      (w.kind === 'rest' || (w.target && TARGETS.includes(w.target.type) && isNum(w.target.value)));
+      w && isDate(w.date) && SPORTS[w.sport] && [...KINDS, 'rest'].includes(w.kind) && typeof w.title === 'string' &&
+      (w.kind === 'rest' || !hasTargets(w.sport) || (w.target && TARGETS.includes(w.target.type) && isNum(w.target.value)));
     if (!ok) return { error: `A workout in that file is incomplete (${w?.date || 'no date'}).` };
   }
   for (const r of obj.races) {
@@ -211,14 +242,14 @@ export function validatePlan(obj) {
   }
   const phases = obj.weekPhases && typeof obj.weekPhases === 'object' ? obj.weekPhases : {};
   return {
-    plan: {
-      version: 1,
+    plan: normalizePlan({
       workouts: obj.workouts.map((w) => ({
-        notes: '', key: false, ...w, id: typeof w.id === 'string' ? w.id : newId('w'), target: w.kind === 'rest' ? null : w.target,
+        notes: '', key: false, ...w, id: typeof w.id === 'string' ? w.id : newId('w'), target: hasTargets(w.sport) && w.kind !== 'rest' ? w.target : null,
       })),
       races: obj.races.map((r) => ({ ...r, id: typeof r.id === 'string' ? r.id : newId('r') })),
+      restDays: Array.isArray(obj.restDays) ? obj.restDays.filter(isDate) : [],
       weekPhases: Object.fromEntries(Object.entries(phases).filter(([d, p]) => isDate(d) && PHASES.includes(p))),
-    },
+    }),
   };
 }
 
@@ -238,7 +269,7 @@ const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob
 // The plan as the value of a share link's hash: "z.<data>" when the browser can
 // compress (deflate-raw), "u.<data>" otherwise. A month of workouts is a few kB.
 export async function encodeShare(plan) {
-  const json = JSON.stringify({ v: 1, w: plan.workouts, r: plan.races, p: plan.weekPhases });
+  const json = JSON.stringify({ v: 1, w: plan.workouts, r: plan.races, d: plan.restDays, p: plan.weekPhases });
   const bytes = new TextEncoder().encode(json);
   if (typeof CompressionStream === 'function') {
     return 'z.' + toBase64Url(await pipe(bytes, new CompressionStream('deflate-raw')));
@@ -260,7 +291,7 @@ export async function decodeShare(value) {
       throw new Error('unknown');
     }
     const o = JSON.parse(new TextDecoder().decode(bytes));
-    return validatePlan({ version: o.v, workouts: o.w, races: o.r, weekPhases: o.p });
+    return validatePlan({ version: o.v, workouts: o.w, races: o.r, restDays: o.d, weekPhases: o.p });
   } catch {
     return { error: 'That plan link is damaged or incomplete.' };
   }

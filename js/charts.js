@@ -1,5 +1,6 @@
 // The four charts. Chart.js is loaded globally from index.html.
 
+import { SPORTS } from './config.js';
 import { dayLabel, longDay, shortDate } from './dates.js';
 import { EXPLAIN, about, fmt, signed, zoneLabel } from './text.js';
 
@@ -19,8 +20,19 @@ function theme() {
     prev: css('--series-prev'),
     other: css('--series-other'),
     zone: (i, n) => css(`--zone-${zoneStep(i, n)}`),
+    sport: sportColor,
   };
 }
+
+// Each sport has a colour token (--sport-running, …); anything else is "other".
+export const sportColor = (key) => css(`--sport-${key}`) || css('--sport-other');
+
+// The sports present in a list of bars, in the order SPORTS lists them, then other.
+const sportKeys = (bars) => {
+  const seen = new Set(bars.flatMap((w) => Object.keys(w.bySport || {})));
+  return [...Object.keys(SPORTS), 'other'].filter((k) => seen.has(k));
+};
+const sportLabel = (k) => SPORTS[k]?.label || 'Other';
 
 // Zones use one blue ramp, easy to hard, spread over however many zones exist.
 function zoneStep(i, n) {
@@ -115,20 +127,30 @@ function draw(id, config) {
 }
 
 // Planned load stacks on this period's bars: the 1-week tab's days still to come,
-// and on weekly charts up to two weeks of plan appended after the range.
-// Returns whether anything planned is shown, for the legend.
+// and on weekly charts up to two weeks of plan appended after the range. In All
+// sports this period's bars stack by sport. Returns what the legend needs.
 export function drawLoad(m) {
   const t = theme();
   const bars = [...m.weeks, ...m.plannedWeeks];
   const planned = bars.map((w) => (w.plannedLoad ? Math.round(w.plannedLoad) : null));
+  const actual = (f) => bars.map((w) => (w.future || w.label ? null : Math.round(f(w))));
+  const keys = m.all ? sportKeys(m.weeks) : [];
+  const thisPeriod = m.all
+    ? keys.map((k, i) => ({
+        label: sportLabel(k),
+        stack: 'this',
+        data: actual((w) => w.bySport[k]?.load || 0),
+        ...bar(t.sport(k), { borderRadius: i === keys.length - 1 ? 4 : 0, borderColor: t.surface, borderWidth: { top: i === keys.length - 1 ? 0 : 1.5 } }),
+      }))
+    : [{ label: 'This period', stack: 'this', data: actual((w) => w.load), ...bar(t.s1) }];
   draw('chart-load', {
     type: 'bar',
     data: {
       labels: bars.map((w) => w.label || barLabel(m)(w)),
       datasets: [
         { label: 'Previous period', stack: 'prev', data: bars.map((w, i) => (m.prevWeeks[i] ? Math.round(m.prevWeeks[i].load) : null)), ...bar(t.prev) },
-        { label: 'This period', stack: 'this', data: bars.map((w) => (w.future || w.label ? null : Math.round(w.load))), ...bar(t.s1) },
-        { label: 'Planned', stack: 'this', data: planned, ...plannedBars(t) },
+        ...thisPeriod,
+        { label: 'Planned', stack: 'this', planned: true, data: planned, ...plannedBars(t) },
       ],
     },
     options: {
@@ -137,26 +159,33 @@ export function drawLoad(m) {
         ...base(t).plugins,
         tooltip: {
           ...base(t).plugins.tooltip,
-          filter: (c) => c.raw != null,
+          filter: (c) => c.raw != null && (c.raw > 0 || !m.all || c.datasetIndex === 0),
+          itemSort: (a, b) => (a.datasetIndex === 0 ? -1 : b.datasetIndex === 0 ? 1 : b.datasetIndex - a.datasetIndex),
           callbacks: {
             title: (items) => barTitle(m, bars[items[0].dataIndex]),
             label: (c) => {
-              if (c.datasetIndex === 2) return ` ${plannedText(m, bars[c.dataIndex])}`;
+              if (c.dataset.planned) return ` ${plannedText(m, bars[c.dataIndex])}`;
+              if (c.datasetIndex > 0 && m.all) return ` ${c.dataset.label}: ${fmt(c.raw)}`;
               const w = (c.datasetIndex === 0 ? m.prevWeeks : bars)[c.dataIndex];
               const when = c.datasetIndex === 0 ? ` (${m.grain === 'day' ? longDay(w.from) : `week of ${shortDate(w.from)}`})` : '';
               return ` ${c.dataset.label}${when}: ${fmt(w.load)}`;
+            },
+            footer: (items) => {
+              const w = bars[items[0].dataIndex];
+              return m.all && !w.future && !w.label ? `All sports: ${fmt(w.load)}` : '';
             },
           },
         },
       },
     },
   });
-  return planned.some((v) => v != null);
+  return { planned: planned.some((v) => v != null), sports: keys.map((k) => ({ label: sportLabel(k), color: t.sport(k) })) };
 }
 
 // Distance is per sport only. Time stacks the selected sport on the other sports,
 // so the full bar is total training time.
 export function drawVolume(m, measure) {
+  if (m.all) return drawHoursBySport(m);
   const t = theme();
   const isKm = measure === 'distance';
   const sportName = m.sport.label;
@@ -195,6 +224,43 @@ export function drawVolume(m, measure) {
     },
   });
   return isKm ? [] : [{ label: sportName, color: t.s1 }, { label: 'Other sports', color: t.other }];
+}
+
+// All sports: training time stacked by sport. Distance doesn't add up across sports.
+function drawHoursBySport(m) {
+  const t = theme();
+  const keys = sportKeys(m.weeks);
+  draw('chart-volume', {
+    type: 'bar',
+    data: {
+      labels: m.weeks.map(barLabel(m)),
+      datasets: keys.map((k, i) => ({
+        label: sportLabel(k),
+        data: m.weeks.map((w) => +(w.bySport[k]?.hours || 0).toFixed(2)),
+        ...bar(t.sport(k), { borderRadius: i === keys.length - 1 ? 4 : 0, borderColor: t.surface, borderWidth: { top: i === keys.length - 1 ? 0 : 1.5 } }),
+      })),
+    },
+    options: {
+      ...base(t, { stacked: true, yTitle: 'hours' }),
+      plugins: {
+        ...base(t).plugins,
+        tooltip: {
+          ...base(t).plugins.tooltip,
+          itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
+          filter: (c) => c.raw > 0,
+          callbacks: {
+            title: (items) => barTitle(m, m.weeks[items[0].dataIndex]),
+            label: (c) => {
+              const s = m.weeks[c.dataIndex].bySport[keys[c.datasetIndex]];
+              return ` ${c.dataset.label}: ${fmt(c.raw, 1)} h (${s.sessions})`;
+            },
+            footer: (items) => `All sports: ${fmt(m.weeks[items[0].dataIndex].hours, 1)} h`,
+          },
+        },
+      },
+    },
+  });
+  return keys.map((k) => ({ label: sportLabel(k), color: t.sport(k) }));
 }
 
 export function drawZones(m, kind) {
@@ -383,17 +449,19 @@ export function drawVolumeLine(m, list, measure, onScrub) {
   const fill = { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1), ...dots(list) };
   const datasets = isKm
     ? [lineSet('Distance', values(list, 'distanceKm'), t.s1, fill)]
-    : [
-        lineSet(m.sport.label, values(list, 'hours', 2), t.s1, fill),
-        lineSet('All sports', values(list, 'allHours', 2), t.text, dots(list)),
-      ];
+    : m.all
+      ? [lineSet('All sports', values(list, 'hours', 2), t.s1, fill)]
+      : [
+          lineSet(m.sport.label, values(list, 'hours', 2), t.s1, fill),
+          lineSet('All sports', values(list, 'allHours', 2), t.text, dots(list)),
+        ];
   draw('chart-volume', {
     type: 'line',
     data: { labels: lineLabels(m, list), datasets },
     plugins: [scrubber(onScrub)],
     options: lineOptions(t, isKm ? 'km' : 'hours'),
   });
-  return isKm ? [] : [{ label: m.sport.label, color: t.s1, line: true }, { label: 'All sports', color: t.text, line: true }];
+  return isKm || m.all ? [] : [{ label: m.sport.label, color: t.s1, line: true }, { label: 'All sports', color: t.text, line: true }];
 }
 
 // A dashed vertical line and the race name at each of this sport's races in view.

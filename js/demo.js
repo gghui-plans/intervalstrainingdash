@@ -17,6 +17,7 @@ function splitZones(totalSecs, weights) {
 
 export function makeDemoData() {
   const rand = rng(42);
+  const randStrength = rng(7); // separate, so strength leaves the other sports' history as it was
   const end = today();
   const from = addDays(end, -400);
   const activities = [];
@@ -70,7 +71,16 @@ export function makeDemoData() {
     if (dow === 6 && rand() > 0.6) {
       activities.push({
         id: `d${id++}`, start_date_local: `${d}T15:00:00`, type: 'Ride', name: 'Commute',
-        distance: 14000, moving_time: 2700, icu_training_load: 25, source: 'GARMIN_CONNECT',
+        distance: 14000, moving_time: 2700, icu_training_load: 25, average_heartrate: 128,
+        icu_hr_zone_times: splitZones(2700, [55, 35, 8, 2, 0, 0]), source: 'GARMIN_CONNECT',
+      });
+    }
+
+    // Strength on Monday evenings, which intervals.icu reads as WeightTraining.
+    if (dow === 1 && randStrength() > 0.3) {
+      activities.push({
+        id: `d${id++}`, start_date_local: `${d}T19:00:00`, type: 'WeightTraining', name: 'Strength',
+        moving_time: 2400, icu_training_load: 22, average_heartrate: 104, source: 'GARMIN_CONNECT',
       });
     }
   }
@@ -119,6 +129,13 @@ export function makeDemoData() {
           lthr: 165,
           max_hr: 185,
         },
+        {
+          types: ['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRide'],
+          hr_zones: [125, 140, 150, 158, 165, 180],
+          hr_zone_names: ['Recovery', 'Endurance', 'Tempo', 'Threshold', 'VO2 Max', 'Anaerobic'],
+          lthr: 158,
+          max_hr: 180,
+        },
       ],
     },
     activities,
@@ -128,7 +145,7 @@ export function makeDemoData() {
 
 // A sample plan for ?demo, held in memory only. Four weeks from the current one
 // (build, build, recovery, build): runs on Monday, Wednesday, Friday and Sunday,
-// paddles on Tuesday and Thursday, Saturday off. Volumes are set so the weekly
+// paddles on Tuesday and Thursday, strength on Monday evening, Saturday a rest day. Volumes are set so the weekly
 // verdicts come out build, build, recover, build against the demo history. A short
 // taper fills race week so race-day fitness reflects a real lead-in.
 const DEMO_WEEKS = [
@@ -143,6 +160,7 @@ const DEMO_WEEKS = [
 export function makeDemoPlan(weekStart = 1) {
   const monday = startOfWeek(today(), 1);
   const workouts = [];
+  const restDays = [];
   const weekPhases = {};
   let n = 0;
   const add = (date, w) => workouts.push({ id: `w_demo${n++}`, date, key: false, notes: '', ...w });
@@ -155,6 +173,7 @@ export function makeDemoPlan(weekStart = 1) {
     const race = wk.phase === 'taper';
 
     add(day(0), steady('running', 'Easy run', wk.mon, zone(2)));
+    if (!race) add(day(0), { sport: 'strength', kind: 'steady', title: 'Strength', minutes: 40, target: null });
     if (wk.paddleReps) {
       add(day(1), {
         sport: 'paddling', kind: 'intervals', title: `Paddle intervals ${wk.paddleReps} × 6 min`, target: zone(4),
@@ -170,7 +189,7 @@ export function makeDemoPlan(weekStart = 1) {
     });
     add(day(3), steady('paddling', 'Easy paddle', wk.paddle, zone(2)));
     add(day(4), steady('running', 'Easy run', wk.fri, { type: 'hr', value: 145 }));
-    add(day(5), { sport: 'running', kind: 'rest', title: 'Rest', minutes: 0, target: null });
+    restDays.push(day(5));
     if (wk.long) {
       add(day(6), {
         ...steady('running', 'Long run', wk.long, zone(2)), key: true, notes: k === 3 ? 'Last 20 minutes at 10K effort.' : '',
@@ -185,6 +204,7 @@ export function makeDemoPlan(weekStart = 1) {
       { id: 'r_demo1', date: addDays(monday, 34), sport: 'running', name: 'Winter 10K', priority: 'A' },
       { id: 'r_demo2', date: addDays(monday, 19), sport: 'paddling', name: 'Harbour 12K paddle', priority: 'B' },
     ],
+    restDays,
     weekPhases,
   };
 }

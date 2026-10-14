@@ -4,19 +4,42 @@
 // at a Cloudflare Worker that forwards requests (see README).
 export const API_BASE = 'https://intervals.icu/api/v1';
 
-// intervals.icu activity types that count as each sport. Anything else is ignored.
+// The sports the app knows, and the intervals.icu activity types that count as each.
+// Tracked sports get their own tab with charts, fitness and weekly verdicts; the rest
+// (tracked: false) appear only in the plan, the calendar and the All sports view.
+// Sports without targets are planned by duration alone, and their planned load comes
+// from your own past sessions. letter tags the sport on the printed calendar.
+// Activity types not listed here still count in All sports.
 export const SPORTS = {
   running: {
     label: 'Running',
     noun: ['run', 'runs'],
+    letter: 'R',
     types: ['Run', 'TrailRun', 'VirtualRun'],
     hasPaceZones: true,
   },
   paddling: {
     label: 'Paddling',
     noun: ['paddle', 'paddles'],
+    letter: 'P',
     types: ['Canoeing', 'Kayaking', 'StandUpPaddling', 'Rowing'],
     hasPaceZones: false,
+  },
+  biking: {
+    label: 'Biking',
+    noun: ['ride', 'rides'],
+    letter: 'B',
+    types: ['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRide', 'EBikeRide'],
+    hasPaceZones: false,
+  },
+  strength: {
+    label: 'Strength',
+    noun: ['strength session', 'strength sessions'],
+    letter: 'S',
+    types: ['WeightTraining'],
+    hasPaceZones: false,
+    tracked: false,
+    targets: false,
   },
 };
 
@@ -39,8 +62,9 @@ export const WARMUP_DAYS = 150;
 export const REFRESH_HOURS = 24;
 
 // The prompt that leads the copied report. Expect to edit this after real use.
-export const COACHING_PROMPT = (sportLabel, rangeText, hasPlan = false) =>
-  `You are my endurance coach. Here is my ${sportLabel.toLowerCase()} training for ${rangeText}, ` +
+// subject is "running training" or "training across all sports".
+export const COACHING_PROMPT = (subject, rangeText, hasPlan = false) =>
+  `You are my endurance coach. Here is my ${subject} for ${rangeText}, ` +
   `exported from intervals.icu. Review it the way a good coach would: tell me what the numbers say ` +
   `about consistency, volume, intensity balance and fatigue, compare it with the previous period, ` +
   `compare what I planned with what I did, and point out anything that worries you. Then suggest ` +

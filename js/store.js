@@ -4,7 +4,7 @@
 import { fetchActivities, fetchAthlete, fetchWellness } from './api.js';
 import { REFRESH_HOURS } from './config.js';
 import { today } from './dates.js';
-import { emptyPlan } from './plan.js';
+import { emptyPlan, normalizePlan } from './plan.js';
 
 const KEYS = { creds: 'tdash.creds', prefs: 'tdash.prefs', cache: 'tdash.cache' };
 // Outside KEYS so "Forget key and data" leaves the plan alone; it has its own delete.
@@ -34,7 +34,10 @@ export const setPrefs = (patch) => write(KEYS.prefs, { ...getPrefs(), ...patch }
 
 // The plan lives only in this browser; intervals.icu stays read-only. setPlan returns
 // false when the browser refuses the write, so the page can say it wasn't saved.
-export const getPlan = () => read(PLAN_KEY) || emptyPlan();
+export function getPlan() {
+  const plan = read(PLAN_KEY);
+  return plan ? normalizePlan(plan) : emptyPlan();
+}
 export const setPlan = (plan) => write(PLAN_KEY, plan);
 
 export function clearAll() {

@@ -28,6 +28,11 @@
   --zone-5: #345f95;
   --zone-6: #214a80;
   --zone-7: #0d366b;
+  --sport-running: #2a78d6;
+  --sport-paddling: #0e9a9f;
+  --sport-biking: #d9860b;
+  --sport-strength: #8457d6;
+  --sport-other: #a3a199;
   --radius: 12px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -60,6 +65,11 @@
     --zone-5: #90b0d9;
     --zone-6: #aec9ea;
     --zone-7: #cde2fb;
+  --sport-running: #3987e5;
+  --sport-paddling: #19b3b8;
+  --sport-biking: #e99a2a;
+  --sport-strength: #9b74e8;
+  --sport-other: #6f6e69;
   }
 }
 
@@ -90,6 +100,11 @@
   --zone-5: #90b0d9;
   --zone-6: #aec9ea;
   --zone-7: #cde2fb;
+  --sport-running: #3987e5;
+  --sport-paddling: #19b3b8;
+  --sport-biking: #e99a2a;
+  --sport-strength: #9b74e8;
+  --sport-other: #6f6e69;
 }
 
 * { box-sizing: border-box; }
@@ -128,6 +143,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
   min-height: 40px;
 }
 .btn:hover { background: var(--surface-2); }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn:disabled { opacity: 0.55; cursor: progress; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
@@ -403,14 +419,6 @@ body {
   .summary-lines div { grid-template-columns: 1fr; gap: 2px; }
 }
 
-/* Week start toggle, shown with the 1-week tab */
-.week-start { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-2); }
-@media (max-width: 640px) {
-  .week-start { justify-content: space-between; }
-  .controls .week-start .segmented { display: inline-flex; }
-  .controls .week-start .segmented button { flex: none; padding-left: 14px; padding-right: 14px; }
-}
-
 /* Compare switch */
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-2); cursor: pointer; user-select: none; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -457,31 +465,53 @@ body {
 .menu-list button:hover, .menu-list button:focus-visible, .menu-list a:hover, .menu-list a:focus-visible { background: var(--surface-2); }
 .menu-list .danger { color: var(--danger); }
 
-/* Weeks */
-.plan-weeks { display: grid; gap: 14px; margin-top: 18px; }
+/* Races */
+.races-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.races-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-right: 2px; }
+.races-none { color: var(--text-2); font-size: 0.875rem; }
+.race-pill {
+  font: inherit; font-size: 0.85rem; color: var(--text-2); cursor: pointer; text-align: left;
+  background: var(--surface-2); border: 0; border-radius: 999px; padding: 6px 12px; min-height: 34px;
+}
+.race-pill strong { color: var(--text-1); }
+.race-pill:hover { background: color-mix(in oklab, var(--accent) 12%, var(--surface-2)); }
+
+/* Weeks: this week and next open, later ones a single line until opened */
+.plan-weeks { display: grid; gap: 12px; margin-top: 16px; align-items: start; }
 @media (min-width: 900px) { .plan-weeks { grid-template-columns: 1fr 1fr; } }
 .plan-week { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; min-width: 0; }
 .plan-week.current { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 .week-head {
   display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center;
-  padding: 10px 12px; background: var(--surface-2);
+  padding: 10px 12px 10px 34px; background: var(--surface-2); cursor: pointer; list-style: none; position: relative;
 }
+.week-head::-webkit-details-marker { display: none; }
+.week-head::before {
+  content: ""; position: absolute; left: 14px; top: 16px; width: 7px; height: 7px;
+  border-right: 2px solid var(--text-3); border-bottom: 2px solid var(--text-3); transform: rotate(-45deg); transition: transform 0.15s;
+}
+.plan-week[open] > .week-head::before { transform: rotate(45deg); top: 13px; }
 .week-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .week-title strong { font-size: 0.95rem; }
 .week-sub { color: var(--text-2); font-size: 0.8rem; }
 .week-totals {
-  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px;
   color: var(--text-2); font-size: 0.82rem; font-variant-numeric: tabular-nums;
 }
-.week-tools { grid-row: 1; grid-column: 2; display: flex; gap: 6px; align-items: center; }
-.verdict, .flag {
+.week-note { grid-column: 1 / -1; display: block; font-size: 0.82rem; color: var(--warning-ink); }
+.tag, .flag {
   display: inline-block; font-size: 0.72rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em;
-  padding: 2px 7px; border-radius: 999px; line-height: 1.4;
+  padding: 2px 7px; border-radius: 999px; line-height: 1.4; color: var(--text-1);
 }
-.verdict.build { background: color-mix(in oklab, var(--state-productive) 18%, transparent); color: var(--text-1); }
-.verdict.maintain { background: color-mix(in oklab, var(--state-neutral) 22%, transparent); color: var(--text-1); }
-.verdict.recover { background: color-mix(in oklab, var(--state-fresh) 18%, transparent); color: var(--text-1); }
-.flag { background: var(--warning-bg); color: var(--warning-ink); }
+.tag.build { background: color-mix(in oklab, var(--state-productive) 18%, transparent); }
+.tag.maintain, .tag.phase { background: color-mix(in oklab, var(--state-neutral) 22%, transparent); }
+.tag.recover { background: color-mix(in oklab, var(--state-fresh) 18%, transparent); }
+.tag.mismatch, .flag { background: var(--warning-bg); color: var(--warning-ink); }
+.week-tools {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-top: 1px solid var(--border);
+}
+.phase-label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-2); }
 select {
   font: inherit; font-size: 0.85rem; color: var(--text-1); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; min-height: 34px;
@@ -492,37 +522,42 @@ select {
 /* Days */
 .days { list-style: none; margin: 0; padding: 0; }
 .day {
-  display: grid; grid-template-columns: 52px 1fr 36px; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center;
   padding: 5px 8px 5px 12px; border-top: 1px solid var(--border); min-height: 44px;
 }
 .day.today { background: color-mix(in oklab, var(--accent) 6%, transparent); }
 .day.today .dow { color: var(--accent); }
-.day-label { font-size: 0.82rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.day-label { font-size: 0.82rem; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .day-label .dow { font-weight: 600; color: var(--text-1); }
 .day.past .day-label { color: var(--text-3); }
 .day.past .day-label .dow { color: var(--text-2); }
 .day-items { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.day-actions { display: flex; gap: 6px; justify-self: end; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   font: inherit; font-size: 0.85rem; text-align: left; color: var(--text-1); cursor: pointer;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; min-height: 32px;
 }
-.chip span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.chip-text { overflow: hidden; text-overflow: ellipsis; }
+.chip-icon { display: inline-flex; flex: none; }
+.chip-icon svg { width: 16px; height: 16px; fill: currentColor; }
 .chip:hover { background: var(--surface-2); }
 .chip.key { border-color: color-mix(in oklab, var(--accent) 55%, transparent); background: color-mix(in oklab, var(--accent) 8%, var(--surface)); font-weight: 600; }
 .chip.rest { color: var(--text-2); border-style: dashed; }
 .chip .tick { color: var(--state-productive); font-weight: 700; }
-.chip.missed { color: var(--text-2); }
+.chip.missed .chip-text { color: var(--text-2); }
 .missed-mark { font-size: 0.72rem; color: var(--text-3); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
 .race-badge {
   font: inherit; font-size: 0.8rem; font-weight: 650; cursor: pointer;
   background: var(--text-1); color: var(--page); border: 0; border-radius: 8px; padding: 5px 9px; min-height: 32px;
 }
-.add-day {
-  width: 32px; height: 32px; border-radius: 8px; justify-self: end;
-  font: 500 1.1rem/1 var(--font); color: var(--text-2); background: transparent; border: 1px dashed var(--border); cursor: pointer;
+.add-day, .day-btn {
+  height: 32px; border-radius: 8px; cursor: pointer;
+  font: 500 0.8rem/1 var(--font); color: var(--text-2); background: transparent; border: 1px dashed var(--border);
 }
-.add-day:hover { color: var(--accent); border-color: var(--accent); }
+.add-day { width: 32px; font-size: 1.1rem; }
+.day-btn { padding: 0 9px; }
+.add-day:hover, .day-btn:hover { color: var(--accent); border-color: var(--accent); }
 .more-weeks { margin-top: 12px; width: 100%; }
 
 /* Plan dialogs */
@@ -550,9 +585,33 @@ textarea {
   .plan { padding: 18px 14px; }
   .plan-actions { width: 100%; }
   .plan-actions > .btn { flex: 1; }
-  .day { grid-template-columns: 50px 1fr 34px; padding-left: 10px; gap: 6px; }
-  .day-label { white-space: nowrap; font-size: 0.78rem; }
+  .day { grid-template-columns: 46px 1fr auto; padding-left: 10px; gap: 6px; }
+  .day-label { font-size: 0.78rem; }
   .week-head { grid-template-columns: 1fr; }
-  .week-tools { grid-row: auto; grid-column: 1; }
-  .week-tools .btn-small { margin-left: auto; }
+  .week-totals { justify-content: flex-start; }
 }
+
+/* Sport toggle and view switch. On phones the sports show as icons, with the
+   selected one's name. */
+.controls-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.sport-toggle button { padding: 8px 16px; }
+@media (max-width: 640px) {
+  .controls-row { flex-direction: column; align-items: stretch; }
+  .controls-row .segmented { display: flex; }
+  .sport-toggle button { flex: 1 1 auto; padding: 8px 10px; }
+  .sport-toggle button .label { display: none; }
+  .sport-toggle button[data-sport="all"] .label, .sport-toggle button[aria-checked="true"] .label { display: inline; }
+}
+.view-toggle button { min-width: 92px; }
+
+/* Undo in the toast */
+.toast { display: flex; align-items: center; gap: 14px; }
+.toast-undo {
+  font: inherit; font-weight: 650; color: inherit; background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* Workout dialog */
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.optional { font-weight: 400; color: var(--text-3); }
+.settings .field { margin: 4px 0 8px; }
