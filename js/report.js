@@ -1,9 +1,10 @@
 // The export: a Markdown report that mirrors the dashboard, and the raw JSON behind it.
 
 import { COACHING_PROMPT } from './config.js';
-import { longDay, rangeLabel, shortDate, today } from './dates.js';
+import { addDays, daysBetween, longDay, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
 import {
-  EXPLAIN, change, dataNotes, fmt, formState, periodName, previousName, signed, summary, summarySentences, zoneLabel,
+  EXPLAIN, change, countdown, dataNotes, fmt, formState, periodName, planNotes, previousName, signed, summary,
+  summarySentences, thisWeekSentence, weekSentence, workoutText, zoneLabel,
 } from './text.js';
 
 const pct = (part, whole) => (whole ? `${Math.round((part / whole) * 100)}%` : '–');
@@ -49,9 +50,75 @@ function paceZoneLines(z) {
   });
 }
 
-const plannedTime = (e) => e.moving_time || e.time_target;
-const plannedDist = (e) => e.distance || e.distance_target;
-const plannedLoad = (e) => e.icu_training_load ?? e.load_target;
+const cell = (text) => String(text).replace(/\|/g, '/').replace(/\s*\n\s*/g, ' / ');
+const stripBold = (text) => text.replace(/\*\*/g, '');
+
+// Weeks the report's plan section covers: this week and next, or on to the race
+// week when this sport's A race is within the forecast.
+function planWeeks(m) {
+  const ctx = m.planContext;
+  const raceA = m.plan.races.find((r) => r.priority === 'A' && r.date > ctx.now && r.date <= ctx.forecast.to);
+  const last = raceA ? startOfWeek(raceA.date, m.weekStart) : addDays(ctx.currentStart, 7);
+  const weeks = [];
+  for (let from = ctx.currentStart; from <= last; from = addDays(from, 7)) weeks.push(ctx.week(from));
+  return weeks;
+}
+
+function planSection(m) {
+  const ctx = m.planContext;
+  const ahead = m.plan.workouts.filter((w) => w.date >= ctx.now);
+  const races = m.planContext.allRaces.filter((r) => r.date >= ctx.now);
+  if (!ahead.length && !races.length) return [];
+  const out = ['## Plan for the coming weeks', ''];
+  const cd = countdown(m);
+  if (cd) out.push(stripBold(cd), '');
+  if (races.length) {
+    const sport = (r) => (r.sport === m.sportKey ? '' : `, ${r.sport}`);
+    out.push(`Races: ${races.map((r) => `${r.name} (${r.priority} race${sport(r)}) on ${longDay(r.date)}, in ${fmt(daysBetween(ctx.now, r.date))} days`).join('; ')}.`, '');
+  }
+  if (!ahead.length) return out;
+  out.push('Planned time and load are estimates from the planned duration and target effort.', '');
+
+  planWeeks(m).forEach((w, k) => {
+    const name = k === 0 ? 'This week' : k === 1 ? 'Next week' : `Week of ${shortDate(w.from)}`;
+    const heading = k < 2 ? `${name}, ${rangeLabel(w.from, w.to)}` : `Week of ${rangeLabel(w.from, w.to)}`;
+    out.push(`### ${heading}${w.phase ? ` (phase: ${w.phase})` : ''}`, '');
+    const list = m.plan.workouts.filter((x) => x.date >= w.from && x.date <= w.to);
+    const dayRaces = races.filter((r) => r.date >= w.from && r.date <= w.to);
+    if (list.length || dayRaces.length) {
+      const head = ['Date', 'Workout', 'Details', 'Time', 'Est. load'];
+      if (w.current) head.push('Status');
+      const rows = [
+        ...list.map((x) => {
+          const row = [
+            longDay(x.date),
+            cell(x.title || 'Workout') + (x.key ? ' (key session)' : ''),
+            cell(workoutText(x, ctx.zones)),
+            x.kind === 'rest' ? '–' : hm(x.estimate.minutes * 60),
+            x.kind === 'rest' || x.estimate.load == null ? '–' : fmt(x.estimate.load),
+          ];
+          if (w.current) {
+            row.push(x.kind === 'rest' ? '–' : x.done.length ? 'Done' : ctx.ahead(x.date) ? 'To come' : 'Missed');
+          }
+          return { date: x.date, row };
+        }),
+        ...dayRaces.map((r) => ({ date: r.date, row: [longDay(r.date), cell(r.name), `${r.priority} race`, '–', '–', ...(w.current ? ['–'] : [])] })),
+      ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      out.push(table(head, rows.map((r) => r.row)), '');
+    }
+    out.push(stripBold(k === 0 ? thisWeekSentence(m) : weekSentence(m, w, name)), '');
+    if (k === 0 && w.formEnd != null) {
+      out.push(`Forecast at the end of this week: fitness ${fmt(w.fitnessEnd)}, form ${signed(w.formEnd)} (${formState(w.formEnd)}).`, '');
+    }
+    const notes = list.filter((x) => x.notes?.trim());
+    if (notes.length) {
+      out.push(...notes.map((x) => `- ${shortDate(x.date)}, ${x.title}: ${x.notes.trim().replace(/\s*\n\s*/g, ' / ')}`), '');
+    }
+  });
+  const pn = planNotes(m);
+  if (pn.length) out.push(pn.join(' '), '');
+  return out;
+}
 
 export function buildMarkdown(m, athleteName) {
   const { sport, range, prev, totals: t, prevTotals: p } = m;
@@ -61,7 +128,8 @@ export function buildMarkdown(m, athleteName) {
     name === dates ? dates : range.calendar ? `${name.toLowerCase()} (${dates})` : `the ${name.toLowerCase()} (${dates})`;
   const out = [];
 
-  out.push(COACHING_PROMPT(sport.label, rangeText), '', '---', '');
+  const hasPlan = m.plan.workouts.some((w) => w.date >= m.today);
+  out.push(COACHING_PROMPT(sport.label, rangeText, hasPlan), '', '---', '');
   out.push(`# ${sport.label} training: ${dates}`, '');
   out.push(
     [athleteName && `Athlete: ${athleteName}`, `Exported ${shortDate(today())} ${today().slice(0, 4)} from intervals.icu`, `Compared with ${rangeLabel(prev.from, prev.to)}`]
@@ -167,19 +235,24 @@ export function buildMarkdown(m, athleteName) {
 
   if (m.planned.length) {
     out.push('## Planned vs actual', '');
+    out.push('From my own plan. Planned time and load are estimates from the planned duration and target effort.', '');
     out.push(
       table(
-        ['Date', 'Planned', 'Planned time', 'Planned km', 'Planned load', 'What happened'],
-        m.planned.map((e) => [
-          shortDate(e.start_date_local.slice(0, 10)),
-          e.name || 'Workout',
-          hm(plannedTime(e)),
-          plannedDist(e) ? fmt(plannedDist(e) / 1000, 1) : '–',
-          plannedLoad(e) != null ? fmt(plannedLoad(e)) : '–',
-          e.done.length
-            ? e.done.map((a) => `${a.name || 'Session'}: ${hm(a.moving_time)}, ${fmt((a.distance || 0) / 1000, 1)} km, load ${fmt(a.icu_training_load)}`).join('; ')
-            : 'Nothing recorded that day',
-        ]),
+        ['Date', 'Planned', 'Details', 'Planned time', 'Planned load (est.)', 'What happened'],
+        m.planned.map((e) => {
+          const day = e.start_date_local.slice(0, 10);
+          const still = day === m.today && !e.done.length;
+          return [
+            shortDate(day),
+            cell(e.name || 'Workout'),
+            cell(workoutText(e.workout, m.planContext.zones)),
+            hm(e.moving_time),
+            e.icu_training_load != null ? fmt(e.icu_training_load) : '–',
+            e.done.length
+              ? e.done.map((a) => `${cell(a.name || 'Session')}: ${hm(a.moving_time)}, ${fmt((a.distance || 0) / 1000, 1)} km, load ${fmt(a.icu_training_load)}`).join('; ')
+              : still ? 'Planned for today' : 'Nothing recorded that day',
+          ];
+        }),
       ),
       '',
     );
@@ -190,6 +263,8 @@ export function buildMarkdown(m, athleteName) {
       out.push('');
     }
   }
+
+  out.push(...planSection(m));
 
   if (m.activities.length) {
     out.push('## Sessions', '');
@@ -214,7 +289,7 @@ export function buildMarkdown(m, athleteName) {
     );
   }
 
-  const notes = dataNotes(m);
+  const notes = dataNotes(m, { plan: false }); // the plan's notes close its own section
   if (notes.length) out.push('## Data notes', '', ...notes.map((n) => `- ${n}`), '');
 
   return out.join('\n');
@@ -240,8 +315,19 @@ export function buildJson(m) {
       fitness: m.fitness,
       allSportsFitness: m.allSports,
       zones: m.zones,
-      planned: m.planned.map(({ done, ...e }) => ({ ...e, completedActivityIds: done.map((a) => a.id) })),
+      planned: m.planned.map(({ done, workout, ...e }) => ({ ...e, completedActivityIds: done.map((a) => a.id) })),
       activities: m.activities,
+      // The plan for this sport, with the app's estimates (load is intervals.icu-style training load).
+      plan: {
+        workouts: m.plan.workouts.map(({ done, ...w }) => ({ ...w, completedActivityIds: done.map((a) => a.id) })),
+        races: m.planContext.allRaces,
+        weekPhases: m.planContext.weekPhases,
+      },
+      calibration: m.calibration,
+      nextRace: m.nextRace,
+      forecast: m.forecast,
+      thisWeek: m.thisWeek,
+      nextWeek: m.nextWeek,
     },
     null,
     2,

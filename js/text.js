@@ -2,6 +2,7 @@
 // same thing in the same words.
 
 import { daysBetween, rangeLabel, today } from './dates.js';
+import { paceClock, paceUnit } from './plan.js';
 
 export const EXPLAIN = {
   load: "intervals.icu's training load for each session, from heart rate (or pace when it has no HR). An hour at threshold is about 100.",
@@ -139,7 +140,8 @@ function verdictPhrase(w) {
   if (w.verdict === 'first weeks') return '';
   const pct = Math.round((w.ratio - 1) * 100);
   const vs = pct === 0 ? 'level with your 4-week average' : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct)}% on your 4-week average`;
-  return `${vs}, a **${w.verdict}** week`;
+  const noun = { build: 'build', maintain: 'maintenance', recover: 'recovery' }[w.verdict];
+  return `${vs}, a **${noun}** week`;
 }
 
 export function flagSentences(w) {
@@ -153,7 +155,7 @@ export function flagSentences(w) {
 // week. Fitness would go from 44 to 46 and form to about −14."
 export function weekSentence(m, w, name = 'Next week') {
   const p = w.planned;
-  if (!p.sessions) return `Nothing planned for ${name.toLowerCase()} yet.`;
+  if (!p.sessions) return `Nothing planned for ${name === 'Next week' ? 'next week' : `the ${name[0].toLowerCase()}${name.slice(1)}`} yet.`;
   const verdict = verdictPhrase(w);
   let text = `${name}: ${plural(p.sessions, m.sport.noun)}, ${fmt(p.hours, 1)} h, load about ${about(p.load)}${verdict ? `, ${verdict}` : ''}.`;
   if (w.verdict === 'first weeks') text += " There isn't enough recent history to call it a build or recovery week yet.";
@@ -184,6 +186,26 @@ export function planSummary(m) {
   if (!m.plan.workouts.length && !m.nextRace) return '';
   const week = m.range.calendar ? thisWeekSentence(m) : weekSentence(m, m.nextWeek);
   return [countdown(m), week].filter(Boolean).join(' ');
+}
+
+// A workout's target in words: "Z2 Aerobic", "150 bpm", "4:45/km".
+export function targetText(target, zones) {
+  if (!target) return '';
+  if (target.type === 'hrZone') return zoneLabel(zones.hr, target.value - 1);
+  if (target.type === 'hr') return `${fmt(target.value)} bpm`;
+  return `${paceClock(target.value, zones.pace.units)}/${paceUnit(zones.pace.units)}`;
+}
+
+// What a planned workout is, in words: "50 min at Z2 Aerobic", or for intervals
+// "6 × 4 min at 4:15/km, 2 min easy between; 15 min warm-up, 10 min cool-down".
+export function workoutText(w, zones) {
+  if (w.kind === 'rest') return 'Rest';
+  const at = w.target ? ` at ${targetText(w.target, zones)}` : '';
+  if (w.kind === 'steady') return `${fmt(w.minutes)} min${at}`;
+  const parts = [`${fmt(w.reps)} × ${fmt(w.workMin, w.workMin % 1 ? 1 : 0)} min${at}`];
+  if (w.restMin) parts[0] += `, ${fmt(w.restMin, w.restMin % 1 ? 1 : 0)} min easy between`;
+  const wc = [w.warmMin && `${fmt(w.warmMin)} min warm-up`, w.coolMin && `${fmt(w.coolMin)} min cool-down`].filter(Boolean);
+  return [parts[0], wc.join(', ')].filter(Boolean).join('; ');
 }
 
 // How planned loads are scaled, in one or two sentences.

@@ -39,10 +39,14 @@ export const WARMUP_DAYS = 150;
 export const REFRESH_HOURS = 24;
 
 // The prompt that leads the copied report. Expect to edit this after real use.
-export const COACHING_PROMPT = (sportLabel, rangeText) =>
+export const COACHING_PROMPT = (sportLabel, rangeText, hasPlan = false) =>
   `You are my endurance coach. Here is my ${sportLabel.toLowerCase()} training for ${rangeText}, ` +
   `exported from intervals.icu. Review it the way a good coach would: tell me what the numbers say ` +
   `about consistency, volume, intensity balance and fatigue, compare it with the previous period, ` +
   `compare what I planned with what I did, and point out anything that worries you. Then suggest ` +
-  `what the next one to two weeks should look like and why. Ask me about anything the data can't tell you ` +
+  `what the next one to two weeks should look like and why. ` +
+  (hasPlan
+    ? `I have also included my plan for the coming weeks with estimated loads. Say whether the plan fits where I am, and change it if you would. `
+    : '') +
+  `Ask me about anything the data can't tell you ` +
   `(how sessions felt, sleep, niggles, goals) before giving firm advice.`;
