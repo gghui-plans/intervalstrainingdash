@@ -2,14 +2,17 @@
 // weekly rollups for one sport, the previous period, fitness/fatigue/form, and zones.
 
 import { DAILY_MAX_DAYS, FATIGUE_DAYS, FITNESS_DAYS, SPORTS, WARMUP_DAYS } from './config.js';
-import { addDays, daysBetween, eachDay } from './dates.js';
+import { addDays, daysBetween, eachDay, startOfWeek, today } from './dates.js';
+import { CALIBRATION_DAYS, calibrate, estimateLoad, forecast, nextRace, weekVerdict } from './plan.js';
 
 const dateOf = (a) => (a.start_date_local || '').slice(0, 10);
 
 // The full window to fetch for a range: warm-up, previous period, then the range.
+// It always runs to today, which the plan's calibration and forecast start from.
 export function fetchWindow(range) {
   const days = daysBetween(range.from, range.to) + 1;
-  return { from: addDays(range.from, -days - WARMUP_DAYS), to: range.to };
+  const now = today();
+  return { from: addDays(range.from, -days - WARMUP_DAYS), to: range.to > now ? range.to : now };
 }
 
 export function previousPeriod(range) {
@@ -136,12 +139,150 @@ export function sportsPresent(data, range) {
   return counts;
 }
 
-export function buildModel(data, sportKey, range) {
-  const sport = SPORTS[sportKey];
-  const prev = previousPeriod(range);
-  const inSport = data.activities
+const sportActivities = (data, sport) =>
+  data.activities
     .filter((a) => sport.types.includes(a.type))
     .sort((a, b) => (a.start_date_local < b.start_date_local ? -1 : 1));
+
+// Days ahead the fitness forecast runs by default, and how far it stretches to reach
+// an A race.
+const FORECAST_DAYS = 14;
+const RACE_REACH_DAYS = 56;
+
+// Everything the plan needs for one sport, shared by the dashboard and the calendar:
+// each workout's estimated load and what was done that day, calibration, the
+// fitness forecast from today, and a summary for any calendar week.
+export function planContext(data, sportKey, plan, weekStart, now = today()) {
+  const sport = SPORTS[sportKey];
+  const inSport = sportActivities(data, sport);
+  const recent = inSport.filter((a) => dateOf(a) > addDays(now, -CALIBRATION_DAYS));
+  const zones = zoneInfo(settingsFor(data.athlete.sportSettings, sport), sport, recent);
+  const calibration = calibrate(inSport, zones, sport, now);
+
+  const doneOn = {};
+  for (const a of inSport) (doneOn[dateOf(a)] ||= []).push(a);
+
+  const workouts = plan.workouts
+    .filter((w) => w.sport === sportKey)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .map((w) => ({ ...w, estimate: estimateLoad(w, zones, calibration), done: doneOn[w.date] || [] }));
+  const races = plan.races.filter((r) => r.sport === sportKey).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  // A workout planned for today is still to come until a session of this sport is recorded today.
+  const pendingToday = !doneOn[now];
+  const ahead = (d) => d > now || (d === now && pendingToday);
+  const plannedByDay = {};
+  for (const w of workouts) {
+    if (ahead(w.date) && w.estimate.load) plannedByDay[w.date] = (plannedByDay[w.date] || 0) + w.estimate.load;
+  }
+
+  const actual = fitnessSeries(inSport, data.from, now);
+  const actualOn = Object.fromEntries(actual.map((p) => [p.date, p]));
+  const forecastFrom = pendingToday ? now : addDays(now, 1);
+  const startPoint = actualOn[addDays(forecastFrom, -1)] || null;
+  let projected = [];
+  const projectTo = (to) => {
+    if (to >= forecastFrom && (!projected.length || projected[projected.length - 1].date < to)) {
+      projected = forecast(startPoint, plannedByDay, forecastFrom, to);
+    }
+    return projected.filter((p) => p.date <= to);
+  };
+  // Fitness on any day: recorded up to the forecast, projected after it.
+  const pointOn = (d) => (d < forecastFrom ? actualOn[d] || null : projectTo(d).find((p) => p.date === d) || null);
+
+  const inWeek = (list, from, to) => list.filter((x) => (x.date || dateOf(x)) >= from && (x.date || dateOf(x)) <= to);
+  const actualLoad = (from, to) => inWeek(inSport, from, to).reduce((s, a) => s + (a.icu_training_load || 0), 0);
+  const currentStart = startOfWeek(now, weekStart);
+
+  // A week's load: recorded for past weeks, planned for future ones, and for the
+  // current week what's done so far plus what's still to come.
+  const weekLoad = (from) => {
+    const to = addDays(from, 6);
+    if (to < now) return actualLoad(from, to);
+    const toCome = inWeek(workouts, from, to).filter((w) => ahead(w.date));
+    return actualLoad(from, now) + toCome.reduce((s, w) => s + (w.estimate.load || 0), 0);
+  };
+  const baselineBefore = (from) => [1, 2, 3, 4].reduce((s, k) => s + actualLoad(addDays(from, -7 * k), addDays(from, -7 * k + 6)), 0) / 4;
+
+  const totals = (list) => ({
+    sessions: list.filter((w) => w.kind !== 'rest').length,
+    hours: list.reduce((s, w) => s + w.estimate.minutes, 0) / 60,
+    load: list.reduce((s, w) => s + (w.estimate.load || 0), 0),
+    unestimated: list.filter((w) => w.kind !== 'rest' && w.estimate.load == null).length,
+  });
+
+  function week(from) {
+    const to = addDays(from, 6);
+    const own = inWeek(workouts, from, to);
+    const doneList = inWeek(inSport, from, to < now ? to : now);
+    const done = {
+      sessions: doneList.length,
+      hours: doneList.reduce((s, a) => s + (a.moving_time || 0) / 3600, 0),
+      load: actualLoad(from, to),
+      km: doneList.reduce((s, a) => s + (a.distance || 0) / 1000, 0),
+    };
+    const planned = totals(own);
+    const toCome = totals(own.filter((w) => ahead(w.date)));
+    const past = to < now;
+    const current = from <= now && now <= to;
+    const load = weekLoad(from);
+    const lastWeek = weekLoad(addDays(from, -7));
+    const end = pointOn(to);
+    const baseline = baselineBefore(from < currentStart ? from : currentStart);
+    return {
+      from,
+      to,
+      past,
+      current,
+      sessions: past ? done.sessions : current ? done.sessions + toCome.sessions : planned.sessions,
+      hours: past ? done.hours : current ? done.hours + toCome.hours : planned.hours,
+      load,
+      planned,
+      done,
+      toCome,
+      lastWeek,
+      baseline,
+      ...weekVerdict({ load, baseline, lastWeek, formEnd: end?.form }),
+      fitnessStart: pointOn(addDays(from, -1))?.fitness ?? null,
+      fitnessEnd: end?.fitness ?? null,
+      formEnd: end?.form ?? null,
+      phase: plan.weekPhases?.[from] || null,
+    };
+  }
+
+  const race = nextRace(plan.races, sportKey, now);
+  // The forecast runs two weeks ahead, or on to this sport's next A race if it's within eight weeks.
+  const ownA = races.find((r) => r.priority === 'A' && r.date >= now);
+  let horizon = addDays(now, FORECAST_DAYS);
+  if (ownA && ownA.date > horizon && daysBetween(now, ownA.date) <= RACE_REACH_DAYS) horizon = ownA.date;
+  const points = projectTo(horizon).filter((p) => p.date > now);
+  const raceForecast = race && race.sport === sportKey && race.date > now && race.date <= horizon ? pointOn(race.date) : null;
+
+  return {
+    sport,
+    zones,
+    calibration,
+    workouts,
+    races,
+    nextRace: race,
+    now,
+    currentStart,
+    pendingToday,
+    ahead,
+    fitnessNow: actualOn[now] || null,
+    forecast: { from: forecastFrom, to: horizon, points, atRace: raceForecast },
+    plannedByDay,
+    projectTo,
+    pointOn,
+    week,
+  };
+}
+
+export function buildModel(data, sportKey, range, plan, prefs = {}) {
+  const sport = SPORTS[sportKey];
+  const prev = previousPeriod(range);
+  const inSport = sportActivities(data, sport);
+  const ctx = planContext(data, sportKey, plan, prefs.weekStart ?? 1);
   const within = (list, r) => list.filter((a) => dateOf(a) >= r.from && dateOf(a) <= r.to);
 
   const current = within(inSport, range);
@@ -163,9 +304,21 @@ export function buildModel(data, sportKey, range) {
   const grain = daysBetween(range.from, chartTo) + 1 <= DAILY_MAX_DAYS ? 'day' : 'week';
   const blocks = (from, to) =>
     grain === 'day' ? eachDay(from, to).map((d) => ({ from: d, to: d, days: 1, partial: false })) : weekBlocks(from, to);
+
+  // Planned load on the bars still to come (the 1-week tab's later days).
+  const plannedOn = (from, to) => {
+    const list = ctx.workouts.filter((w) => w.date >= from && w.date <= to && ctx.ahead(w.date));
+    return {
+      plannedLoad: list.reduce((s, w) => s + (w.estimate.load || 0), 0),
+      plannedSessions: list.filter((w) => w.kind !== 'rest').length,
+      plannedHours: list.reduce((s, w) => s + w.estimate.minutes, 0) / 60,
+    };
+  };
+  const withPlan = (w) => (grain === 'day' && ctx.ahead(w.from) ? { ...w, ...plannedOn(w.from, w.to) } : w);
+
   const weeks = blocks(range.from, chartTo)
     .map(withAll(current))
-    .map((w) => ({ ...w, future: w.from > range.to }));
+    .map((w) => withPlan({ ...w, future: w.from > range.to }));
   const prevWeeks = blocks(prev.from, prevChartTo).map(withAll(within(inSport, { from: prev.from, to: prevChartTo })));
 
   // Daily points for the line view's "By day" option, shaped like the weekly ones.
@@ -189,7 +342,34 @@ export function buildModel(data, sportKey, range) {
     }
   }
 
-  const planned = []; // fed from the local plan in the next step
+  // Weekly charts that end today get up to two calendar weeks of plan after the range.
+  const endsToday = range.to === ctx.now;
+  let plannedWeeks = [];
+  let plannedDays = [];
+  if (grain === 'week' && endsToday) {
+    plannedWeeks = [1, 2].map((k) => {
+      const from = addDays(ctx.currentStart, 7 * k);
+      return { from, to: addDays(from, 6), days: 7, label: k === 1 ? 'Next week' : 'Week after', ...plannedOn(from, addDays(from, 6)) };
+    });
+    while (plannedWeeks.length && !plannedWeeks[plannedWeeks.length - 1].plannedSessions) plannedWeeks.pop();
+    if (plannedWeeks.length) {
+      plannedDays = eachDay(addDays(ctx.now, 1), plannedWeeks[plannedWeeks.length - 1].to)
+        .map((d) => ({ from: d, to: d, days: 1, ...plannedOn(d, d) }));
+    }
+  }
+
+  // The local plan's workouts in the range, shaped for the report's "Planned vs actual" table.
+  const planned = ctx.workouts
+    .filter((w) => w.kind !== 'rest' && w.date >= range.from && w.date <= range.to)
+    .map((w) => ({
+      name: w.title,
+      start_date_local: `${w.date}T00:00:00`,
+      moving_time: w.estimate.minutes * 60,
+      icu_training_load: w.estimate.load,
+      description: w.notes || '',
+      done: w.done,
+      workout: w,
+    }));
 
   return {
     sportKey,
@@ -213,6 +393,18 @@ export function buildModel(data, sportKey, range) {
     zones,
     activities: current,
     planned,
+    plan: { workouts: ctx.workouts, races: ctx.races },
+    calibration: ctx.calibration,
+    forecast: ctx.forecast,
+    fitnessNow: ctx.fitnessNow,
+    nextRace: ctx.nextRace,
+    thisWeek: ctx.week(ctx.currentStart),
+    nextWeek: ctx.week(addDays(ctx.currentStart, 7)),
+    plannedWeeks,
+    plannedDays,
+    today: ctx.now,
+    weekStart: prefs.weekStart ?? 1,
+    planContext: ctx, // for the plan section's week list
     otherTypes,
     // Activities synced from Strava come back from the API without data.
     unavailable: within(data.activities, range).filter((a) => a._note || (!a.type && a.source === 'STRAVA')).length,

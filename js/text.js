@@ -10,6 +10,8 @@ export const EXPLAIN = {
   form: 'Fitness minus fatigue. −10 to −30 is productive training; above +5 is fresh for racing; below −30 risks overreaching.',
   hrZones: 'Time in each heart-rate zone, using the zones set in intervals.icu.',
   paceZones: 'Time in each pace zone, using the threshold pace set in intervals.icu.',
+  plannedLoad: "An estimate from the planned time and effort, scaled to match intervals.icu's load for your past sessions. Treat it as roughly right.",
+  verdict: 'Build means more load than your recent average, recover means less, maintain means about the same. Fitness rises in build weeks and fatigue falls in recovery weeks.',
 };
 
 export const fmt = (n, dp = 0) =>
@@ -65,10 +67,12 @@ export function summary(m) {
   const p = m.prevTotals;
   const prevName = previousName(m.range);
   const lines = [];
+  const plan = planSummary(m);
 
   if (!t.sessions) {
     const lead = `${periodName(m.range)}: no ${m.sport.noun[1]} recorded.`;
     if (p.sessions) lines.push({ label: 'Before', text: `${cap(prevName)} had ${plural(p.sessions, m.sport.noun)}.` });
+    if (plan) lines.push({ label: 'Plan', text: plan });
     return { lead, lines };
   }
 
@@ -107,10 +111,115 @@ export function summary(m) {
     text += `. Form **${signed(last.form)}, ${formState(last.form)}**.`;
     lines.push({ label: 'Fitness', text });
   }
+
+  if (plan) lines.push({ label: 'Plan', text: plan });
   return { lead, lines };
 }
 
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
+
+// ---------- The plan ----------
+
+// Planned loads are estimates, so they're rounded: "about 410", "about 95".
+export const about = (n) => fmt(n >= 200 ? Math.round(n / 10) * 10 : Math.round(n / 5) * 5);
+
+// "Winter 10K in 33 days. Fitness is 44 and the plan takes it to 52 by race day."
+export function countdown(m) {
+  const r = m.nextRace;
+  if (!r) return '';
+  const other = r.sport !== m.sportKey ? ` (${r.sport})` : '';
+  let text = r.days === 0 ? `**${r.name}**${other} is today.` : `**${r.name}**${other} in ${plural(r.days, ['day', 'days'])}.`;
+  const f = m.forecast.atRace;
+  if (f && m.fitnessNow) text += ` Fitness is ${fmt(m.fitnessNow.fitness)} and the plan takes it to ${fmt(f.fitness)} by race day.`;
+  return text;
+}
+
+// "up 12% on your 4-week average, a **build** week"
+function verdictPhrase(w) {
+  if (w.verdict === 'first weeks') return '';
+  const pct = Math.round((w.ratio - 1) * 100);
+  const vs = pct === 0 ? 'level with your 4-week average' : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct)}% on your 4-week average`;
+  return `${vs}, a **${w.verdict}** week`;
+}
+
+export function flagSentences(w) {
+  const out = [];
+  if (w.flags.includes('big jump')) out.push('That is a big jump; most coaches keep weekly increases under about 10%.');
+  if (w.flags.includes('high fatigue')) out.push('That would push form below −30, which is high fatigue.');
+  return out;
+}
+
+// "Next week: 5 runs, 6.2 h, load about 410, up 12% on your 4-week average, a build
+// week. Fitness would go from 44 to 46 and form to about −14."
+export function weekSentence(m, w, name = 'Next week') {
+  const p = w.planned;
+  if (!p.sessions) return `Nothing planned for ${name.toLowerCase()} yet.`;
+  const verdict = verdictPhrase(w);
+  let text = `${name}: ${plural(p.sessions, m.sport.noun)}, ${fmt(p.hours, 1)} h, load about ${about(p.load)}${verdict ? `, ${verdict}` : ''}.`;
+  if (w.verdict === 'first weeks') text += " There isn't enough recent history to call it a build or recovery week yet.";
+  if (w.fitnessStart != null && w.fitnessEnd != null) {
+    text += ` Fitness would go from ${fmt(w.fitnessStart)} to ${fmt(w.fitnessEnd)} and form to about ${signed(w.formEnd)}.`;
+  }
+  return [text, ...flagSentences(w)].join(' ');
+}
+
+// The 1-week tab: "Still to come this week: 2 runs, about 95 load. The week would
+// land at 380, up 8% on last week."
+export function thisWeekSentence(m) {
+  const w = m.thisWeek;
+  const c = w.toCome;
+  let text = c.sessions
+    ? `Still to come this week: ${plural(c.sessions, m.sport.noun)}, about ${about(c.load)} load.`
+    : 'Nothing more planned this week.';
+  if (w.load > 0) {
+    const vs = change(w.load, w.lastWeek);
+    text += ` The week would ${c.sessions ? 'land' : 'end'} at ${about(w.load)}${vs ? `, ${vs === 'level' ? 'level with' : `${vs} on`} last week` : ''}.`;
+  }
+  return [text, ...flagSentences(w)].join(' ');
+}
+
+// The summary's Plan line: the countdown, then next week (or, on the 1-week tab, the
+// rest of this week).
+function planSummary(m) {
+  if (!m.plan.workouts.length && !m.nextRace) return '';
+  const week = m.range.calendar ? thisWeekSentence(m) : weekSentence(m, m.nextWeek);
+  return [countdown(m), week].filter(Boolean).join(' ');
+}
+
+// How planned loads are scaled, in one or two sentences.
+export function calibrationText(m) {
+  const noun = m.sport.noun[1];
+  const targets = new Set(m.plan.workouts.filter((w) => w.target).map((w) => (w.target.type === 'pace' ? 'pace' : 'hr')));
+  if (!targets.size) targets.add('hr');
+  const out = [];
+  for (const kind of ['hr', 'pace']) {
+    if (!targets.has(kind)) continue;
+    const c = m.calibration[kind];
+    const what = kind === 'pace' ? 'Estimates for pace targets are' : targets.has('pace') ? 'Estimates for heart-rate targets are' : 'Planned-load estimates are';
+    out.push(
+      c.calibrated
+        ? `${what} scaled by ${c.factor.toFixed(2)} to match intervals.icu's load for your last ${plural(c.n, m.sport.noun)}.`
+        : `${what} unscaled until there are five ${noun} with ${kind === 'pace' ? 'distance' : 'heart rate'} to compare against.`,
+    );
+  }
+  if (m.sportKey === 'paddling') out.push('Paddling load from heart rate is rough to begin with, so treat these as ballpark.');
+  return out.join(' ');
+}
+
+// Planned workouts whose load can't be estimated, and why.
+function missingSettingNotes(m) {
+  const counts = {};
+  for (const w of m.plan.workouts) if (w.estimate.missing) counts[w.estimate.missing] = (counts[w.estimate.missing] || 0) + 1;
+  const sport = m.sport.label.toLowerCase();
+  const what = {
+    lthr: `a threshold heart rate for ${sport}`,
+    hrZones: `heart-rate zones for ${sport}`,
+    thresholdPace: `a threshold pace for ${sport}`,
+  };
+  return Object.entries(counts)
+    .filter(([k]) => what[k])
+    .map(([k, n]) => `${plural(n, ['planned workout has', 'planned workouts have'])} no load estimate because intervals.icu has no ${what[k]}.`);
+}
 
 // Plain sentences, for places without formatting (the JSON export).
 export function summarySentences(m) {
@@ -151,5 +260,6 @@ export function dataNotes(m) {
   if (other.length) {
     notes.push(`Not shown: ${other.map(([type, n]) => `${n} ${type}`).join(', ')}.`);
   }
+  if (m.plan.workouts.some((w) => w.kind !== 'rest')) notes.push(calibrationText(m), ...missingSettingNotes(m));
   return notes;
 }

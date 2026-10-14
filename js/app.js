@@ -85,7 +85,7 @@ function render(data) {
     state.sport = Object.keys(SPORTS).sort((a, b) => counts[b] - counts[a])[0];
   }
 
-  const m = buildModel(data, state.sport, range);
+  const m = buildModel(data, state.sport, range, state.plan, { weekStart: state.weekStart });
   state.model = m;
 
   syncControls();

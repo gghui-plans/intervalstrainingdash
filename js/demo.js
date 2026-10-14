@@ -129,38 +129,53 @@ export function makeDemoData() {
 // A sample plan for ?demo, held in memory only. Four weeks from the current one
 // (build, build, recovery, build): runs on Monday, Wednesday, Friday and Sunday,
 // paddles on Tuesday and Thursday, Saturday off. Volumes are set so the weekly
-// verdicts come out build, build, recover, build against the demo history.
+// verdicts come out build, build, recover, build against the demo history. A short
+// taper fills race week so race-day fitness reflects a real lead-in.
+const DEMO_WEEKS = [
+  // minutes for the easy runs and long run, interval reps, then the paddles
+  { phase: 'build', mon: 70, reps: 9, fri: 75, long: 155, paddleReps: 7, paddle: 85 },
+  { phase: 'build', mon: 75, reps: 10, fri: 75, long: 155, paddleReps: 8, paddle: 85 },
+  { phase: 'recovery', mon: 45, reps: 5, fri: 45, long: 95, paddleReps: 4, paddle: 55 },
+  { phase: 'build', mon: 75, reps: 10, fri: 75, long: 155, paddleReps: 8, paddle: 85 },
+  { phase: 'taper', mon: 45, reps: 4, fri: 30, long: 0, paddleReps: 0, paddle: 45 },
+];
+
 export function makeDemoPlan(weekStart = 1) {
   const monday = startOfWeek(today(), 1);
   const workouts = [];
   const weekPhases = {};
-  const scale = [1, 1.08, 0.68, 1.15];
-  const phases = ['build', 'build', 'recovery', 'build'];
   let n = 0;
   const add = (date, w) => workouts.push({ id: `w_demo${n++}`, date, key: false, notes: '', ...w });
+  const steady = (sport, title, minutes, target) => ({ sport, kind: 'steady', title, minutes, target });
+  const zone = (value) => ({ type: 'hrZone', value });
 
-  scale.forEach((s, k) => {
+  DEMO_WEEKS.forEach((wk, k) => {
     const day = (dow) => addDays(monday, k * 7 + dow); // 0 Monday … 6 Sunday
-    const mins = (m) => Math.round((m * s) / 5) * 5;
-    const reps = Math.max(3, Math.round(6 * s));
-    weekPhases[startOfWeek(day(0), weekStart)] = phases[k];
+    weekPhases[startOfWeek(day(0), weekStart)] = wk.phase;
+    const race = wk.phase === 'taper';
 
-    add(day(0), { sport: 'running', kind: 'steady', title: 'Easy run', minutes: mins(55), target: { type: 'hrZone', value: 2 } });
-    add(day(1), {
-      sport: 'paddling', kind: 'intervals', title: `Paddle intervals ${Math.max(3, Math.round(5 * s))} × 5 min`, target: { type: 'hrZone', value: 4 },
-      reps: Math.max(3, Math.round(5 * s)), workMin: 5, restMin: 2, warmMin: 15, coolMin: 10, key: true,
-    });
+    add(day(0), steady('running', 'Easy run', wk.mon, zone(2)));
+    if (wk.paddleReps) {
+      add(day(1), {
+        sport: 'paddling', kind: 'intervals', title: `Paddle intervals ${wk.paddleReps} × 6 min`, target: zone(4),
+        reps: wk.paddleReps, workMin: 6, restMin: 2, warmMin: 15, coolMin: 10, key: true,
+      });
+    } else {
+      add(day(1), steady('paddling', 'Easy paddle', 40, zone(2)));
+    }
     add(day(2), {
-      sport: 'running', kind: 'intervals', title: `Intervals ${reps} × 4 min`, target: { type: 'pace', value: 3.92 },
-      reps, workMin: 4, restMin: 2, warmMin: 15, coolMin: 10, key: true, notes: 'Hills instead if the track is busy.',
+      sport: 'running', kind: 'intervals', title: race ? `Sharpener ${wk.reps} × 3 min` : `Intervals ${wk.reps} × 4 min`,
+      target: { type: 'pace', value: race ? 3.85 : 3.92 }, reps: wk.reps, workMin: race ? 3 : 4, restMin: 2,
+      warmMin: 15, coolMin: race ? 10 : 15, key: !race, notes: race ? '' : 'Hills instead if the track is busy.',
     });
-    add(day(3), { sport: 'paddling', kind: 'steady', title: 'Easy paddle', minutes: mins(70), target: { type: 'hrZone', value: 2 } });
-    add(day(4), { sport: 'running', kind: 'steady', title: 'Steady run', minutes: mins(50), target: { type: 'hr', value: 150 } });
+    add(day(3), steady('paddling', 'Easy paddle', wk.paddle, zone(2)));
+    add(day(4), steady('running', 'Easy run', wk.fri, { type: 'hr', value: 145 }));
     add(day(5), { sport: 'running', kind: 'rest', title: 'Rest', minutes: 0, target: null });
-    add(day(6), {
-      sport: 'running', kind: 'steady', title: 'Long run', minutes: mins(120), target: { type: 'hrZone', value: 2 },
-      key: true, notes: k === 3 ? 'Last 20 minutes at race effort.' : '',
-    });
+    if (wk.long) {
+      add(day(6), {
+        ...steady('running', 'Long run', wk.long, zone(2)), key: true, notes: k === 3 ? 'Last 20 minutes at 10K effort.' : '',
+      });
+    }
   });
 
   return {
