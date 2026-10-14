@@ -396,6 +396,9 @@ export function buildModel(data, sportKey, range, plan, prefs = {}) {
     plan: { workouts: ctx.workouts, races: ctx.races },
     calibration: ctx.calibration,
     forecast: ctx.forecast,
+    // Forecast days the fitness chart continues into: to the end of the week on the
+    // 1-week tab, otherwise the whole forecast. Only when the range ends today.
+    forecastShown: endsToday ? ctx.forecast.points.filter((p) => !range.calendar || p.date <= chartTo) : [],
     fitnessNow: ctx.fitnessNow,
     nextRace: ctx.nextRace,
     thisWeek: ctx.week(ctx.currentStart),

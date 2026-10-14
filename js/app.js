@@ -3,9 +3,9 @@
 import { DEFAULT_WEEKS, SPORTS } from './config.js';
 import { addDays, longDay, rangeLabel, shortDate, startOfWeek, today } from './dates.js';
 import { buildModel, fetchWindow, sportsPresent } from './data.js';
-import { drawFitness, drawLoad, drawLoadLine, drawVolume, drawVolumeLine, drawZones } from './charts.js';
+import { drawFitness, drawLoad, drawLoadLine, drawVolume, drawVolumeLine, drawZones, fitnessPoints } from './charts.js';
 import { buildJson, buildMarkdown, copyText, download, fileName } from './report.js';
-import { EXPLAIN, change, dataNotes, fmt, formState, periodName, signed, summary } from './text.js';
+import { EXPLAIN, about, change, dataNotes, fmt, formState, periodName, signed, summary } from './text.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -245,13 +245,14 @@ function renderTakeaways(m) {
     : '';
   const last = m.fitness[m.fitness.length - 1];
   $('take-fitness').innerHTML = last
-    ? `Today: Fitness <strong>${fmt(last.fitness)}</strong> · Fatigue <strong>${fmt(last.fatigue)}</strong> · Form <strong>${signed(last.form)}</strong>`
+    ? `Today: Fitness <strong>${fmt(last.fitness)}</strong> · Fatigue <strong>${fmt(last.fatigue)}</strong> · Form <strong>${signed(last.form)}</strong>` +
+      (m.forecastShown.length ? ' · dashed: if you follow the plan' : '')
     : '';
 }
 
 function legend(el, items) {
   el.replaceChildren(
-    ...items.map(({ label, color, line, tip }) => {
+    ...items.map(({ label, color, line, hatch, tip }) => {
       const item = document.createElement(tip ? 'button' : 'span');
       item.className = 'legend-item';
       if (tip) {
@@ -259,8 +260,8 @@ function legend(el, items) {
         item.dataset.tip = tip;
       }
       const sw = document.createElement('span');
-      sw.className = 'swatch' + (line ? ' line' : '');
-      sw.style.background = color;
+      sw.className = 'swatch' + (line ? ' line' : '') + (hatch ? ' hatch' : '');
+      if (!hatch) sw.style.background = color;
       item.append(sw, label);
       return item;
     }),
@@ -280,6 +281,12 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 // Ranges already charted by day only have days.
 const lineUnit = (m) => (m.grain === 'day' ? 'day' : state.lineUnit);
 const lineList = (m) => (lineUnit(m) === 'day' && m.grain !== 'day' ? m.days : m.weeks);
+// The load line continues into the plan: weeks (or days) after a range that ends today.
+const loadLineList = (m) => [
+  ...lineList(m),
+  ...(m.grain === 'day' ? [] : lineUnit(m) === 'day' ? m.plannedDays : m.plannedWeeks).map((w) => ({ ...w, future: true })),
+];
+const plannedLegend = { label: 'Planned', hatch: true, tip: EXPLAIN.plannedLoad };
 
 function renderCharts(m) {
   if (!window.Chart) return; // Chart.js still loading; render() runs again once it has
@@ -295,15 +302,16 @@ function renderCharts(m) {
   $('info-load').dataset.tip = EXPLAIN.load;
 
   if (lines) {
-    drawLoadLine(m, lineList(m), (i) => scrubLoad(m, i));
-    legend($('legend-load'), []);
+    const planned = drawLoadLine(m, loadLineList(m), (i) => scrubLoad(m, i));
+    legend($('legend-load'), planned ? [{ label: 'Load', color: cssVar('--series-1'), line: true }, plannedLegend] : []);
     legend($('legend-volume'), drawVolumeLine(m, lineList(m), state.measure, (i) => scrubVolume(m, i)));
   } else {
     const daily = m.grain === 'day';
-    drawLoad(m);
+    const planned = drawLoad(m);
     legend($('legend-load'), [
       { label: m.range.calendar ? 'This week' : 'This period', color: cssVar('--series-1') },
       { label: daily ? (m.range.calendar ? 'Last week' : m.range.days === 7 ? 'Same day, week before' : 'Same day, period before') : 'Previous period, same week', color: cssVar('--series-prev') },
+      ...(planned ? [plannedLegend] : []),
     ]);
     legend($('legend-volume'), drawVolume(m, state.measure));
   }
@@ -329,11 +337,15 @@ function pointName(m, w) {
 }
 
 function scrubLoad(m, i) {
-  const w = i == null ? null : lineList(m)[i];
+  const w = i == null ? null : loadLineList(m)[i];
   if (!w) return renderTakeaways(m);
+  const name = w.label ? `${w.label} (${shortDate(w.from)})` : longDay(w.from);
+  const sessions = (n) => `${n} ${m.sport.noun[n === 1 ? 0 : 1]}`;
   $('take-load').innerHTML = w.future
-    ? `${longDay(w.from)}: still to come`
-    : `<strong>${fmt(w.load)}</strong> ${pointName(m, w)} · ${w.sessions ? `${w.sessions} ${m.sport.noun[w.sessions === 1 ? 0 : 1]}` : `no ${m.sport.noun[1]}`}`;
+    ? w.plannedLoad
+      ? `${name}: planned about <strong>${about(w.plannedLoad)}</strong>${w.plannedSessions ? ` · ${sessions(w.plannedSessions)}` : ''}`
+      : `${name}: ${w.label ? 'nothing planned' : 'still to come'}`
+    : `<strong>${fmt(w.load)}</strong> ${pointName(m, w)} · ${w.sessions ? sessions(w.sessions) : `no ${m.sport.noun[1]}`}`;
 }
 
 function scrubVolume(m, i) {
@@ -347,10 +359,10 @@ function scrubVolume(m, i) {
 }
 
 function scrubFitness(m, i) {
-  const p = i == null ? null : m.fitness[i];
+  const p = i == null ? null : fitnessPoints(m)[i];
   if (!p) return renderTakeaways(m);
   $('take-fitness').innerHTML =
-    `${longDay(p.date)}: Fitness <strong>${fmt(p.fitness)}</strong> · Fatigue <strong>${fmt(p.fatigue)}</strong> · Form <strong>${signed(p.form)}</strong>`;
+    `${longDay(p.date)}${p.forecast ? ' (forecast)' : ''}: Fitness <strong>${fmt(p.fitness)}</strong> · Fatigue <strong>${fmt(p.fatigue)}</strong> · Form <strong>${signed(p.form)}</strong>`;
 }
 
 function renderZones(m) {

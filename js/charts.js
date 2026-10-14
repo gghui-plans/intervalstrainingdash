@@ -1,7 +1,7 @@
 // The four charts. Chart.js is loaded globally from index.html.
 
 import { dayLabel, longDay, shortDate } from './dates.js';
-import { EXPLAIN, fmt, signed, zoneLabel } from './text.js';
+import { EXPLAIN, about, fmt, signed, zoneLabel } from './text.js';
 
 const instances = {};
 
@@ -29,7 +29,34 @@ function zoneStep(i, n) {
 
 // Bars are weeks, or days for short ranges (m.grain).
 const barLabel = (m) => (w) => (m.grain === 'day' ? dayLabel(w.from) : shortDate(w.from) + (w.partial ? '*' : ''));
-const barTitle = (m, w) => (m.grain === 'day' ? longDay(w.from) : `Week of ${shortDate(w.from)}`);
+const barTitle = (m, w) =>
+  w.label ? `${w.label}, ${shortDate(w.from)} – ${shortDate(w.to)}` : m.grain === 'day' ? longDay(w.from) : `Week of ${shortDate(w.from)}`;
+
+// Diagonal lines in the colour on a transparent background: planned, not done.
+export function hatch(color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const g = c.getContext('2d');
+  g.strokeStyle = withAlpha(color, 0.7);
+  g.lineWidth = 2;
+  g.beginPath();
+  for (const k of [-8, 0, 8]) {
+    g.moveTo(k, 8);
+    g.lineTo(k + 8, 0);
+  }
+  g.stroke();
+  return g.createPattern(c, 'repeat');
+}
+
+// "Planned: about 95 (2 runs)"
+const plannedText = (m, w) =>
+  `Planned: about ${about(w.plannedLoad)}${w.plannedSessions ? ` (${w.plannedSessions} ${m.sport.noun[w.plannedSessions === 1 ? 0 : 1]})` : ''}`;
+
+const plannedBars = (t) => ({
+  ...bar(hatch(t.s1)),
+  borderColor: withAlpha(t.s1, 0.55),
+  borderWidth: 1.5,
+});
 
 function base(t, { stacked = false, yTitle = '' } = {}) {
   return {
@@ -87,28 +114,35 @@ function draw(id, config) {
   instances[id] = new Chart(canvas, config);
 }
 
+// Planned load stacks on this period's bars: the 1-week tab's days still to come,
+// and on weekly charts up to two weeks of plan appended after the range.
+// Returns whether anything planned is shown, for the legend.
 export function drawLoad(m) {
   const t = theme();
-  const weeks = m.weeks;
+  const bars = [...m.weeks, ...m.plannedWeeks];
+  const planned = bars.map((w) => (w.plannedLoad ? Math.round(w.plannedLoad) : null));
   draw('chart-load', {
     type: 'bar',
     data: {
-      labels: weeks.map(barLabel(m)),
+      labels: bars.map((w) => w.label || barLabel(m)(w)),
       datasets: [
-        { label: 'Previous period', data: m.prevWeeks.map((w) => Math.round(w.load)), ...bar(t.prev) },
-        { label: 'This period', data: weeks.map((w) => Math.round(w.load)), ...bar(t.s1) },
+        { label: 'Previous period', stack: 'prev', data: bars.map((w, i) => (m.prevWeeks[i] ? Math.round(m.prevWeeks[i].load) : null)), ...bar(t.prev) },
+        { label: 'This period', stack: 'this', data: bars.map((w) => (w.future || w.label ? null : Math.round(w.load))), ...bar(t.s1) },
+        { label: 'Planned', stack: 'this', data: planned, ...plannedBars(t) },
       ],
     },
     options: {
-      ...base(t),
+      ...base(t, { stacked: true }),
       plugins: {
         ...base(t).plugins,
         tooltip: {
           ...base(t).plugins.tooltip,
+          filter: (c) => c.raw != null,
           callbacks: {
-            title: (items) => barTitle(m, weeks[items[0].dataIndex]),
+            title: (items) => barTitle(m, bars[items[0].dataIndex]),
             label: (c) => {
-              const w = (c.datasetIndex === 0 ? m.prevWeeks : weeks)[c.dataIndex];
+              if (c.datasetIndex === 2) return ` ${plannedText(m, bars[c.dataIndex])}`;
+              const w = (c.datasetIndex === 0 ? m.prevWeeks : bars)[c.dataIndex];
               const when = c.datasetIndex === 0 ? ` (${m.grain === 'day' ? longDay(w.from) : `week of ${shortDate(w.from)}`})` : '';
               return ` ${c.dataset.label}${when}: ${fmt(w.load)}`;
             },
@@ -117,6 +151,7 @@ export function drawLoad(m) {
       },
     },
   });
+  return planned.some((v) => v != null);
 }
 
 // Distance is per sport only. Time stacks the selected sport on the other sports,
@@ -268,7 +303,7 @@ function scrubber(onScrub) {
       ctx.stroke();
       chart.data.datasets.forEach((ds, k) => {
         const p = chart.getDatasetMeta(k).data[i];
-        if (!p || ds.data[i] == null || chart.getDatasetMeta(k).hidden) return;
+        if (!p || ds.data[i] == null || ds.type === 'bar' || chart.getDatasetMeta(k).hidden) return;
         ctx.beginPath();
         ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
         ctx.fillStyle = ds.borderColor;
@@ -316,22 +351,30 @@ function lineOptions(t, yTitle = '') {
 // drop the per-point dots, which would crowd together.
 const values = (list, key, dp = 1) => list.map((w) => (w.future ? null : +w[key].toFixed(dp)));
 const lineLabels = (m, list) =>
-  list.map((w) => (w.days === 1 && m.grain === 'week' ? shortDate(w.from) : barLabel(m)(w)));
+  list.map((w) => w.label || (w.days === 1 && m.grain === 'week' ? shortDate(w.from) : barLabel(m)(w)));
 const dots = (list) => ({ pointRadius: list.length > 16 ? 0 : 4 });
 
+// Planned points (days still to come, or weeks and days after the range) carry
+// plannedLoad and draw as hatched bars under the line. Returns whether any do.
 export function drawLoadLine(m, list, onScrub) {
   const t = theme();
+  const planned = list.map((w) => (w.plannedLoad ? Math.round(w.plannedLoad) : null));
+  const anyPlanned = planned.some((v) => v != null);
+  const options = lineOptions(t);
+  if (anyPlanned) options.scales.x.offset = true; // keeps the end bars whole
   draw('chart-load', {
     type: 'line',
     data: {
       labels: lineLabels(m, list),
       datasets: [
         lineSet('Load', values(list, 'load', 0), t.s1, { fill: 'origin', backgroundColor: withAlpha(t.s1, 0.1), ...dots(list) }),
+        ...(anyPlanned ? [{ type: 'bar', label: 'Planned', data: planned, ...plannedBars(t) }] : []),
       ],
     },
     plugins: [scrubber(onScrub)],
-    options: lineOptions(t),
+    options,
   });
+  return anyPlanned;
 }
 
 export function drawVolumeLine(m, list, measure, onScrub) {
@@ -353,22 +396,59 @@ export function drawVolumeLine(m, list, measure, onScrub) {
   return isKm ? [] : [{ label: m.sport.label, color: t.s1, line: true }, { label: 'All sports', color: t.text, line: true }];
 }
 
+// A dashed vertical line and the race name at each of this sport's races in view.
+function raceMarker(m, points) {
+  return {
+    id: 'raceMarker',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { x } } = chart;
+      for (const r of m.plan.races) {
+        const i = points.findIndex((p) => p.date === r.date);
+        if (i < 0) continue;
+        const px = x.getPixelForValue(i);
+        ctx.save();
+        ctx.strokeStyle = css('--text-2');
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(px, a.top);
+        ctx.lineTo(px, a.bottom);
+        ctx.stroke();
+        ctx.fillStyle = css('--text-1');
+        ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        ctx.textBaseline = 'top';
+        const right = px > (a.left + a.right) / 2;
+        ctx.textAlign = right ? 'right' : 'left';
+        ctx.fillText(r.name, px + (right ? -5 : 5), a.top + 4);
+        ctx.restore();
+      }
+    },
+  };
+}
+
+// The points the fitness chart plots: the range, then the forecast when it is shown.
+export const fitnessPoints = (m) => [...m.fitness, ...m.forecastShown.map((p) => ({ ...p, forecast: true }))];
+
 // onScrub is passed when comparison is off, so fitness reads out like the other lines.
+// Forecast days continue each line dashed.
 export function drawFitness(m, onScrub = null) {
   const t = theme();
+  const points = fitnessPoints(m);
+  const first = m.fitness.length; // index of the first forecast point
   const line = (label, key, color, extra = {}) => ({
     label,
-    data: m.fitness.map((p) => +p[key].toFixed(1)),
+    data: points.map((p) => +p[key].toFixed(1)),
     borderColor: color,
     backgroundColor: color,
     borderWidth: 2,
     pointRadius: 0,
-    pointHoverRadius: onScrub ? 0 : 5, // the scrubber draws its own marker
+    pointHoverRadius: onScrub ? 0 : (c) => (c.dataIndex >= first ? 0 : 5), // the scrubber draws its own marker
     pointHoverBorderColor: t.surface,
     pointHoverBorderWidth: 2,
     tension: 0.25,
     borderCapStyle: 'round',
     borderJoinStyle: 'round',
+    segment: { borderDash: (c) => (c.p1DataIndex >= first ? [5, 4] : undefined) },
     ...extra,
   });
   const series = [
@@ -379,12 +459,12 @@ export function drawFitness(m, onScrub = null) {
   draw('chart-fitness', {
     type: 'line',
     data: {
-      labels: m.fitness.map((p) => shortDate(p.date)),
+      labels: points.map((p) => shortDate(p.date)),
       datasets: series.map((s, i) =>
         line(s.label, s.key, s.color, i === 0 ? { fill: 'origin', backgroundColor: withAlpha(s.color, 0.1) } : {}),
       ),
     },
-    plugins: onScrub ? [formBand(t), scrubber(onScrub)] : [formBand(t)],
+    plugins: [formBand(t), raceMarker(m, points), ...(onScrub ? [scrubber(onScrub)] : [])],
     options: {
       ...base(t),
       ...(onScrub ? { events: SCRUB_EVENTS } : {}),
@@ -405,6 +485,7 @@ export function drawFitness(m, onScrub = null) {
           : {
               ...base(t).plugins.tooltip,
               callbacks: {
+                title: (items) => longDay(points[items[0].dataIndex].date) + (items[0].dataIndex >= first ? ' (forecast)' : ''),
                 label: (c) => ` ${c.dataset.label}: ${c.datasetIndex === 2 ? signed(c.raw) : fmt(c.raw)}`,
               },
             },

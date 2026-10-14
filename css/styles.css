@@ -207,6 +207,11 @@ input {
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .swatch.line { height: 3px; width: 14px; border-radius: 2px; }
+/* Planned load: the chart's hatched bars, in miniature */
+.swatch.hatch {
+  background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--series-1) 75%, transparent) 0 1.5px, transparent 1.5px 3.5px);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--series-1) 55%, transparent);
+}
 
 /* Info tips: hover on desktop, tap (focus) on touch */
 .tip { position: relative; }
