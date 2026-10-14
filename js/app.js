@@ -22,6 +22,7 @@ const state = {
   customTo: prefs.customTo || today(),
   measure: 'distance',
   zone: 'hr',
+  plan: demo ? null : store.getPlan(), // demo: an in-memory sample, set in start()
   data: null,
   model: null,
 };
@@ -538,8 +539,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => stat
 
 async function start() {
   if (demo) {
-    const { makeDemoData } = await import('./demo.js');
+    const { makeDemoData, makeDemoPlan } = await import('./demo.js');
     store.useData(makeDemoData());
+    state.plan = makeDemoPlan(state.weekStart);
   }
   await new Promise((resolve) => (window.Chart ? resolve() : window.addEventListener('load', resolve, { once: true })));
   load();

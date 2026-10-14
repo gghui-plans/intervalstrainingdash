@@ -1,7 +1,7 @@
 // Synthetic data for ?demo, shaped like the intervals.icu API responses. Lets anyone
 // see the dashboard without an account, and lets layout work happen offline.
 
-import { addDays, eachDay, today } from './dates.js';
+import { addDays, eachDay, startOfWeek, today } from './dates.js';
 
 function rng(seed) {
   return () => {
@@ -20,7 +20,6 @@ export function makeDemoData() {
   const end = today();
   const from = addDays(end, -400);
   const activities = [];
-  const planned = [];
   let id = 1;
 
   for (const d of eachDay(from, end)) {
@@ -82,22 +81,6 @@ export function makeDemoData() {
     _note: 'STRAVA activities are not available via the API',
   });
 
-  // Planned runs for the last two weeks.
-  for (const d of eachDay(addDays(end, -13), end)) {
-    const dow = new Date(d + 'T12:00:00Z').getUTCDay();
-    const plan = {
-      0: ['Long run 20 km', 6600, 20000, 95, 'Easy, last 3 km at marathon effort'],
-      3: ['6 × 800 m', 3600, 11000, 80, 'Warm up 2 km\n6 × 800 m at 5 km pace, 400 m jog\nCool down'],
-      5: ['Easy 8 km', 2700, 8000, 40, ''],
-    }[dow];
-    if (plan) {
-      planned.push({
-        id: id++, start_date_local: `${d}T00:00:00`, type: 'Run', name: plan[0],
-        moving_time: plan[1], distance: plan[2], icu_training_load: plan[3], description: plan[4],
-      });
-    }
-  }
-
   // All-sports fitness and fatigue, as intervals.icu's wellness records carry them.
   const wellness = [];
   let ctl = 30;
@@ -140,6 +123,53 @@ export function makeDemoData() {
     },
     activities,
     wellness,
-    planned,
+  };
+}
+
+// A sample plan for ?demo, held in memory only. Four weeks from the current one
+// (build, build, recovery, build): runs on Monday, Wednesday, Friday and Sunday,
+// paddles on Tuesday and Thursday, Saturday off. Volumes are set so the weekly
+// verdicts come out build, build, recover, build against the demo history.
+export function makeDemoPlan(weekStart = 1) {
+  const monday = startOfWeek(today(), 1);
+  const workouts = [];
+  const weekPhases = {};
+  const scale = [1, 1.08, 0.68, 1.15];
+  const phases = ['build', 'build', 'recovery', 'build'];
+  let n = 0;
+  const add = (date, w) => workouts.push({ id: `w_demo${n++}`, date, key: false, notes: '', ...w });
+
+  scale.forEach((s, k) => {
+    const day = (dow) => addDays(monday, k * 7 + dow); // 0 Monday … 6 Sunday
+    const mins = (m) => Math.round((m * s) / 5) * 5;
+    const reps = Math.max(3, Math.round(6 * s));
+    weekPhases[startOfWeek(day(0), weekStart)] = phases[k];
+
+    add(day(0), { sport: 'running', kind: 'steady', title: 'Easy run', minutes: mins(55), target: { type: 'hrZone', value: 2 } });
+    add(day(1), {
+      sport: 'paddling', kind: 'intervals', title: `Paddle intervals ${Math.max(3, Math.round(5 * s))} × 5 min`, target: { type: 'hrZone', value: 4 },
+      reps: Math.max(3, Math.round(5 * s)), workMin: 5, restMin: 2, warmMin: 15, coolMin: 10, key: true,
+    });
+    add(day(2), {
+      sport: 'running', kind: 'intervals', title: `Intervals ${reps} × 4 min`, target: { type: 'pace', value: 3.92 },
+      reps, workMin: 4, restMin: 2, warmMin: 15, coolMin: 10, key: true, notes: 'Hills instead if the track is busy.',
+    });
+    add(day(3), { sport: 'paddling', kind: 'steady', title: 'Easy paddle', minutes: mins(70), target: { type: 'hrZone', value: 2 } });
+    add(day(4), { sport: 'running', kind: 'steady', title: 'Steady run', minutes: mins(50), target: { type: 'hr', value: 150 } });
+    add(day(5), { sport: 'running', kind: 'rest', title: 'Rest', minutes: 0, target: null });
+    add(day(6), {
+      sport: 'running', kind: 'steady', title: 'Long run', minutes: mins(120), target: { type: 'hrZone', value: 2 },
+      key: true, notes: k === 3 ? 'Last 20 minutes at race effort.' : '',
+    });
+  });
+
+  return {
+    version: 1,
+    workouts,
+    races: [
+      { id: 'r_demo1', date: addDays(monday, 34), sport: 'running', name: 'Winter 10K', priority: 'A' },
+      { id: 'r_demo2', date: addDays(monday, 19), sport: 'paddling', name: 'Harbour 12K paddle', priority: 'B' },
+    ],
+    weekPhases,
   };
 }

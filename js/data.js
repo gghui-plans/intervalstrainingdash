@@ -189,10 +189,7 @@ export function buildModel(data, sportKey, range) {
     }
   }
 
-  const planned = data.planned
-    .filter((e) => sport.types.includes(e.type) && dateOf(e) >= range.from && dateOf(e) <= range.to)
-    .sort((a, b) => (a.start_date_local < b.start_date_local ? -1 : 1))
-    .map((e) => ({ ...e, done: current.filter((a) => dateOf(a) === dateOf(e)) }));
+  const planned = []; // fed from the local plan in the next step
 
   return {
     sportKey,

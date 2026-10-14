@@ -42,6 +42,3 @@ export const fetchActivities = (creds, oldest, newest) =>
 
 export const fetchWellness = (creds, oldest, newest) =>
   get('/wellness', creds, { oldest, newest });
-
-export const fetchPlanned = (creds, oldest, newest) =>
-  get('/events', creds, { oldest, newest, category: 'WORKOUT' });

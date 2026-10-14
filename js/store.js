@@ -1,11 +1,14 @@
-// Browser-only persistence: credentials, UI preferences and the cached API data.
-// Nothing here is ever sent anywhere except the API key to intervals.icu.
+// Browser-only persistence: credentials, UI preferences, the cached API data and the
+// training plan. Nothing here is ever sent anywhere except the API key to intervals.icu.
 
-import { fetchActivities, fetchAthlete, fetchPlanned, fetchWellness } from './api.js';
+import { fetchActivities, fetchAthlete, fetchWellness } from './api.js';
 import { REFRESH_HOURS } from './config.js';
 import { today } from './dates.js';
+import { emptyPlan } from './plan.js';
 
 const KEYS = { creds: 'tdash.creds', prefs: 'tdash.prefs', cache: 'tdash.cache' };
+// Outside KEYS so "Forget key and data" leaves the plan alone; it has its own delete.
+const PLAN_KEY = 'tdash.plan';
 
 function read(key) {
   try {
@@ -29,6 +32,11 @@ export const setCreds = (creds) => write(KEYS.creds, creds);
 export const getPrefs = () => read(KEYS.prefs) || {};
 export const setPrefs = (patch) => write(KEYS.prefs, { ...getPrefs(), ...patch });
 
+// The plan lives only in this browser; intervals.icu stays read-only. setPlan returns
+// false when the browser refuses the write, so the page can say it wasn't saved.
+export const getPlan = () => read(PLAN_KEY) || emptyPlan();
+export const setPlan = (plan) => write(PLAN_KEY, plan);
+
 export function clearAll() {
   for (const key of Object.values(KEYS)) {
     try {
@@ -42,10 +50,6 @@ export function clearAll() {
 const ACTIVITY_FIELDS = [
   'id', 'start_date_local', 'type', 'name', 'distance', 'moving_time', 'elapsed_time',
   'icu_training_load', 'icu_hr_zone_times', 'pace_zone_times', 'average_heartrate', 'source', '_note',
-];
-const EVENT_FIELDS = [
-  'id', 'start_date_local', 'type', 'name', 'description', 'moving_time', 'distance',
-  'icu_training_load', 'load_target', 'time_target', 'distance_target',
 ];
 const SPORT_SETTING_FIELDS = [
   'types', 'hr_zones', 'hr_zone_names', 'pace_zones', 'pace_zone_names', 'pace_units',
@@ -73,11 +77,10 @@ export async function ensureData(creds, from, to, { force = false } = {}) {
   const oldest = sameAthlete && cache.from < from ? cache.from : from;
   const newest = sameAthlete && cache.to > to ? cache.to : to;
 
-  const [athlete, activities, wellness, planned] = await Promise.all([
+  const [athlete, activities, wellness] = await Promise.all([
     fetchAthlete(creds),
     fetchActivities(creds, oldest, newest),
     fetchWellness(creds, oldest, newest),
-    fetchPlanned(creds, oldest, newest),
   ]);
 
   const data = {
@@ -92,7 +95,6 @@ export async function ensureData(creds, from, to, { force = false } = {}) {
     },
     activities: activities.map((a) => pick(a, ACTIVITY_FIELDS)),
     wellness: wellness.map((w) => ({ id: w.id, ctl: w.ctl, atl: w.atl })),
-    planned: planned.map((e) => pick(e, EVENT_FIELDS)),
   };
   memoryCache = data;
   write(KEYS.cache, data);
