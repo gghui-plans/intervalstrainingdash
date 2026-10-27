@@ -53,7 +53,13 @@ function creds() {
 
 async function load({ force = false } = {}) {
   const c = creds();
-  if (!c) return showOnboarding();
+  if (!c) {
+    if (!store.isPlanOnly()) return showOnboarding();
+    // Plan only: there's no training to fetch, so the plan is the whole page.
+    showDashboard();
+    state.view = 'plan';
+    return render(store.planOnlyData());
+  }
   showDashboard();
   if (demo) return render(store.getCache());
 
@@ -102,7 +108,8 @@ function render(data = state.data) {
     renderSummary(m);
     renderCharts(m);
   }
-  $('report-preview').textContent = buildMarkdown(m, data.athlete.name);
+  // Plan only has no training to report on.
+  $('report-preview').textContent = m.planOnly ? '' : buildMarkdown(m, data.athlete.name);
 }
 
 // All, then each sport this athlete does or plans. On phones the sports show as icons,
@@ -126,6 +133,8 @@ function syncControls() {
   for (const b of document.querySelectorAll('[data-weekstart]')) b.setAttribute('aria-checked', Number(b.dataset.weekstart) === state.weekStart);
   $('overview').hidden = !overview;
   $('plan').hidden = overview;
+  // Plan only: no Overview to switch to and no report to export.
+  $('view-toggle').hidden = $('export').hidden = !!m?.planOnly;
   $('range-controls').hidden = !overview;
   $('custom-range').hidden = state.weeks !== 'custom';
   $('compare-toggle').checked = state.compare;
@@ -142,9 +151,12 @@ function renderUpdated(data) {
   const d = new Date(data.fetchedAt);
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const sameDay = data.fetchedOn === today();
+  $('refresh').hidden = !!data.planOnly;
   $('updated').textContent = demo
     ? 'Demo data'
-    : `Updated ${sameDay ? 'today' : d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+    : data.planOnly
+      ? 'Plan only'
+      : `Updated ${sameDay ? 'today' : d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 function renderSummary(m) {
@@ -441,13 +453,21 @@ function readCreds(form) {
   return { athleteId: f.get('athleteId').trim(), apiKey: f.get('apiKey').trim() };
 }
 
+// In demo there's no key to keep, so only the week setting applies. Plan only can
+// leave both blank; once either is filled in, both are needed to connect.
+function syncCredsRequired() {
+  const form = $('settings-form');
+  const started = !!(form.athleteId.value.trim() || form.apiKey.value.trim());
+  form.athleteId.required = form.apiKey.required = !demo && (!store.isPlanOnly() || started);
+}
+
 function openSettings() {
   const form = $('settings-form');
   const c = store.getCreds() || {};
   form.athleteId.value = c.athleteId || '';
   form.apiKey.value = c.apiKey || '';
-  // In demo there's no key to keep, so only the week setting applies.
-  form.athleteId.required = form.apiKey.required = !demo;
+  $('connect-hint').hidden = demo || !store.isPlanOnly();
+  syncCredsRequired();
   syncControls();
   $('settings').showModal();
 }
@@ -460,13 +480,20 @@ $('onboarding-form').addEventListener('submit', (e) => {
   load({ force: true });
 });
 
+$('plan-only').addEventListener('click', () => {
+  store.setPrefs({ planOnly: true });
+  load();
+});
+
 $('open-settings').addEventListener('click', openSettings);
 $('cancel-settings').addEventListener('click', () => $('settings').close());
+$('settings-form').addEventListener('input', syncCredsRequired);
 $('settings-form').addEventListener('submit', (e) => {
   e.preventDefault();
+  const c = readCreds(e.target);
   $('settings').close();
-  if (demo) return;
-  store.setCreds(readCreds(e.target));
+  if (demo || !c.athleteId) return; // plan only with the key left blank
+  store.setCreds(c);
   load({ force: true });
 });
 $('clear-data').addEventListener('click', () => {

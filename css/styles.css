@@ -270,6 +270,11 @@ button.legend-item { font: inherit; color: inherit; background: none; border: 0;
 /* Onboarding and settings */
 .onboarding { max-width: 620px; margin: 24px auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
 .onboarding .lede { color: var(--text-2); }
+.plan-only-offer { margin: 20px 0 4px; padding-top: 16px; border-top: 1px solid var(--border); }
+.plan-only-offer p { margin: 0 0 12px; font-size: 0.9rem; color: var(--text-2); }
+.plan-only-offer strong { color: var(--text-1); }
+.plan-only-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.plan-only-actions a { font-size: 0.9rem; }
 .steps { padding-left: 1.2em; }
 .steps li + li { margin-top: 6px; }
 .creds-form { display: grid; gap: 12px; margin: 16px 0; }

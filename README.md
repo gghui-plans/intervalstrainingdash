@@ -15,6 +15,8 @@ Try it without an account: open the page with `?demo` on the end of the address.
 2. Open the dashboard and paste both in.
 3. Make sure intervals.icu has your **heart-rate zones** for each sport, and a **threshold pace** for running. Without them the zone chart stays empty, and the page says why.
 
+**Just planning?** Tap **Plan without intervals.icu** on the first screen instead. You get the Plan view and the printed calendar with no key: workouts, rest days, races, phases, export and share links all work, and workouts show their time. Load estimates, fitness, the weekly build/recover call and the report need intervals.icu, because they come from your heart-rate settings and history. To add them later, enter your Athlete ID and API key in **Settings**; the plan stays as it is.
+
 Activities that reach intervals.icu only through Strava can't be read through its API. Connect your watch (Garmin, Coros, Suunto, Polar…) to intervals.icu directly.
 
 **Indoor bikes such as Peloton** usually send rides to Strava, so they can't be read. Record the ride on your watch as well (an indoor cycling activity); it reaches intervals.icu with heart rate, and the page treats it like any other ride. The watch doesn't record the bike's power, so biking load and targets use heart rate.
@@ -62,7 +64,7 @@ npx serve .
 | `calendar.html`, `css/print.css` | The printable monthly calendar, one letter-landscape page per month. |
 | `js/config.js` | What a fork would change: the sports and their activity types, presets, the coaching prompt, the API base URL. |
 | `js/api.js` | Calls to intervals.icu (Basic auth, username `API_KEY`). |
-| `js/store.js` | localStorage for credentials, preferences, a stripped-down cache with a daily refresh, and the plan. |
+| `js/store.js` | localStorage for credentials, preferences, a stripped-down cache with a daily refresh, and the plan. Plan-only mode stands in an empty set of training. |
 | `js/data.js` | Weekly rollups for one sport or all of them, the previous-period comparison, fitness/fatigue/form, zone settings, and the plan's weeks and forecast. |
 | `js/plan.js` | Planned-load estimates, calibration, the forecast, weekly verdicts, race countdowns, and the plan's file and share-link formats. |
 | `js/text.js` | The plain-language sentences shared by the page and the report. |

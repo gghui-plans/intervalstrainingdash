@@ -64,7 +64,8 @@ function chipHtml(w, ctx) {
   if (w.done.length) {
     cls += ' done';
     status = '<span class="tick" aria-label="done">✓</span>';
-  } else if (w.date < ctx.now) {
+  } else if (w.date < ctx.now && !ctx.planOnly) {
+    // Plan only can't see what was done, so nothing counts as missed.
     cls += ' missed';
     status = '<span class="missed-mark">missed</span>';
   }
@@ -104,10 +105,10 @@ function weekHtml(m, k) {
     ? 'Nothing planned'
     : m.all
       ? `${fmt(p.hours, 1)} h · ${plural(p.sessions, ['session', 'sessions'])}`
-      : `${plural(p.sessions, m.sport.noun)} · ${fmt(p.hours, 1)} h · load ~${about(p.load)}`;
+      : `${plural(p.sessions, m.sport.noun)} · ${fmt(p.hours, 1)} h${m.planOnly ? '' : ` · load ~${about(p.load)}`}`;
   const check = phaseCheck(w, m.all);
   const tag = check.label ? `<span class="tag ${check.kind}">${check.label}</span>` : '';
-  const flags = w.flags.map((f) => `<span class="flag">${f}</span>`).join('');
+  const flags = m.planOnly ? '' : w.flags.map((f) => `<span class="flag">${f}</span>`).join('');
   const note = check.note ? `<span class="week-note">${esc(check.note)}</span>` : '';
   const open = app.state.weekOpen[from] ?? k < 2;
   const phaseOptions = ['', ...PHASES]
@@ -141,12 +142,18 @@ function racesHtml(m) {
 export function renderPlan(m) {
   const lede = planSummary(m);
   const what = m.all ? '' : ` ${m.sport.label.toLowerCase()}`;
-  $('plan-lede').innerHTML = lede ? emphasis(lede) : `Nothing${what} planned yet. Add workouts to see what they do to your fitness.`;
+  const empty = m.planOnly
+    ? `Nothing${what} planned yet. Add workouts and races, then print a calendar.`
+    : `Nothing${what} planned yet. Add workouts to see what they do to your fitness.`;
+  $('plan-lede').innerHTML = lede ? emphasis(lede) : empty;
   $('races-line').innerHTML = racesHtml(m);
   const keep = app.demo
     ? 'Demo plan: changes last until you reload.'
     : 'Saved in this browser only. Export it or copy a share link now and then to keep a copy.';
-  $('plan-note').innerHTML = [...planNotes(m), keep].map((n) => `<span>${esc(n)}</span>`).join(' ');
+  const notes = m.planOnly
+    ? ['Planning without intervals.icu, so workouts show time but no load. Connect it in Settings to add load estimates, fitness and the weekly build or recovery call.']
+    : planNotes(m);
+  $('plan-note').innerHTML = [...notes, keep].map((n) => `<span>${esc(n)}</span>`).join(' ');
   $('print-calendar').href = `calendar.html?${app.demo ? 'demo&' : ''}sport=${m.view}`;
   $('plan-weeks').innerHTML = Array.from({ length: app.state.planWeeks }, (_, k) => weekHtml(m, k)).join('');
 }
@@ -294,7 +301,11 @@ function updateEstimate() {
     history: `No estimate yet: it comes from your own past ${SPORTS[editing.sport].noun[1]}, and there are fewer than three.`,
   };
   let text;
-  if (est.load == null) text = missing[est.missing] || '';
+  if (model().planOnly) {
+    // No intervals.icu settings to estimate load from, so just the time.
+    const zone = workout.target?.type === 'hrZone' ? ` · Z${workout.target.value}` : '';
+    text = `${fmt(est.minutes)} min${zone}`;
+  } else if (est.load == null) text = missing[est.missing] || '';
   else {
     const zone = zoneOf(workout.target, sc.zones);
     text = `About ${fmt(est.load)} load · ${fmt(est.minutes)} min${zone ? ` · around ${zone}` : ''}`;

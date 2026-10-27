@@ -153,7 +153,7 @@ export function countdown(m) {
   if (r.days === 0) return `**${r.name}**${other} is today.`;
   let text = `**${r.name}**${other} in ${plural(r.days, ['day', 'days'])}`;
   const a = m.atRace;
-  if (a && a.fitness != null && a.fitnessNow != null) {
+  if (a && !m.planOnly && a.fitness != null && a.fitnessNow != null) {
     const which = r.sport === m.view ? 'fitness' : `${sportName(r.sport)} fitness`;
     text += `, with ${which} ${fmt(a.fitnessNow)} now and ${fmt(a.fitness)} on race day`;
     if (a.form != null) text += `, and ${m.all ? 'form' : 'overall form'} about ${signed(a.form)}`;
@@ -193,6 +193,7 @@ function weekOpening(m, w, name) {
   const p = w.planned;
   if (!p.sessions) return null;
   if (m.all) return `${name}: ${fmt(p.hours, 1)} h over ${plural(p.sessions, ['session', 'sessions'])} (${sportCounts(w.bySport)})`;
+  if (m.planOnly) return `${name}: ${plural(p.sessions, m.sport.noun)}, ${fmt(p.hours, 1)} h`;
   const verdict = verdictPhrase(w);
   return `${name}: ${plural(p.sessions, m.sport.noun)}, ${fmt(p.hours, 1)} h, load about ${about(p.load)}${verdict ? `, ${verdict}` : ''}`;
 }
@@ -239,6 +240,11 @@ export function thisWeekSentence(m, { short = false } = {}) {
 // where next week leaves fitness and form.
 export function planSummary(m) {
   if (!m.plan.workouts.length && !m.nextRace) return '';
+  if (m.planOnly) {
+    // No intervals.icu: the countdown and next week's time, without load or fitness.
+    const open = weekOpening(m, m.nextWeek, 'Next week');
+    return [countdown(m), open ? `${open}.` : nothingFor('Next week')].filter(Boolean).join(' ');
+  }
   let week;
   if (m.range.calendar) {
     week = thisWeekSentence(m, { short: true });

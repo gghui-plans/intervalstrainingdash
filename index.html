@@ -47,6 +47,13 @@
         <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required></label>
         <button type="submit" class="btn btn-primary">Connect</button>
       </form>
+      <div class="plan-only-offer">
+        <p><strong>Only want to plan?</strong> Plan workouts and races and print a monthly calendar without connecting. Load estimates and fitness need intervals.icu; you can connect later in Settings and keep your plan.</p>
+        <div class="plan-only-actions">
+          <button type="button" class="btn btn-quiet" id="plan-only">Plan without intervals.icu</button>
+          <a href="./?demo">Try the demo</a>
+        </div>
+      </div>
       <p class="privacy"><strong>Privacy.</strong> Your key is stored only in this browser and is sent only to intervals.icu. There is no server behind this page; nothing about you is stored anywhere else. Clear it any time from Settings.</p>
       <p class="hint">Charts depend on your intervals.icu settings: heart-rate zones for each sport, and threshold pace for running.</p>
     </section>
@@ -188,7 +195,7 @@
         <p class="plan-note" id="plan-note"></p>
       </section>
 
-      <section class="export">
+      <section class="export" id="export">
         <div class="export-head">
           <svg class="export-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5Z M8 8h8M8 11.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div>
@@ -221,6 +228,7 @@
   <dialog class="settings" id="settings">
     <form class="creds-form" id="settings-form" method="dialog">
       <h2>Settings</h2>
+      <p class="hint" id="connect-hint" hidden>Connect intervals.icu to add load estimates, fitness and the weekly build or recovery call. Your plan stays as it is.</p>
       <label>Athlete ID <input name="athleteId" autocomplete="off" spellcheck="false" placeholder="i12345" required></label>
       <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required></label>
       <p class="privacy">Stored only in this browser and sent only to intervals.icu.</p>
@@ -236,7 +244,7 @@
         <button type="button" class="btn btn-danger" id="clear-data">Forget key and data</button>
         <span class="spacer"></span>
         <button type="button" class="btn btn-quiet" id="cancel-settings">Cancel</button>
-        <button type="submit" class="btn btn-primary" value="save">Save</button>
+        <button type="submit" class="btn btn-primary" value="save" id="save-settings">Save</button>
       </div>
     </form>
   </dialog>

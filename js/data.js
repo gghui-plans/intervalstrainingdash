@@ -385,6 +385,7 @@ export function planContext(data, plan, weekStart, now = today()) {
   }
 
   return {
+    planOnly: !!data.planOnly, // no intervals.icu: the plan has times, but no loads or fitness
     now,
     weekStart,
     currentStart,
@@ -503,6 +504,7 @@ export function buildModel(data, view, range, ctx) {
   return {
     view,
     sportKey: view, // the view, kept under its old name for the report and file names
+    planOnly: ctx.planOnly,
     all,
     grain,
     days,

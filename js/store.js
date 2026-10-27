@@ -108,3 +108,20 @@ export async function ensureData(creds, from, to, { force = false } = {}) {
 export function useData(data) {
   memoryCache = data;
 }
+
+// Plan only: someone who chose to plan without connecting intervals.icu. A saved key
+// always wins, so connecting later simply brings the numbers in.
+export const isPlanOnly = () => !getCreds() && !!getPrefs().planOnly;
+
+// No training at all, shaped like the cache so the plan and calendar code run unchanged.
+export const planOnlyData = () => ({
+  planOnly: true,
+  athleteId: null,
+  from: today(),
+  to: today(),
+  fetchedAt: Date.now(),
+  fetchedOn: today(),
+  athlete: { name: '', sportSettings: [] },
+  activities: [],
+  wellness: [],
+});

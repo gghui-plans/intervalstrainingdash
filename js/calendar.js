@@ -58,7 +58,7 @@ function dayCell(d, month, v) {
     const a = recorded ? claim(w.sport) : null;
     const title = `${tag(w.sport)}<span class="t">${esc(w.title || 'Workout')}</span>`;
     if (a) items.push(`<li class="done${w.key ? ' key' : ''}"><span class="mark tick">✓</span>${title} <span class="m">${actual(a)}</span></li>`);
-    else if (d < now) items.push(`<li class="missed"><span class="mark circle"></span>${title} <span class="m">${duration(w.estimate.minutes)}</span></li>`);
+    else if (d < now && !ctx.planOnly) items.push(`<li class="missed"><span class="mark circle"></span>${title} <span class="m">${duration(w.estimate.minutes)}</span></li>`);
     else items.push(`<li class="${w.key ? 'key' : ''}"><span class="mark box"></span>${title} <span class="m">${duration(w.estimate.minutes)}</span></li>`);
   }
   // Sessions nobody planned still get their tick.
@@ -87,7 +87,13 @@ function weekCells(from, month, v) {
   const label = `<div class="cell wk">${out ? `<span class="out">${out}</span>` : ''}${w.phase ? `<span class="ph">${w.phase}</span>` : ''}</div>`;
 
   let totals;
-  if (all) {
+  if (ctx.planOnly) {
+    // Without intervals.icu there's nothing done to count and no load: planned time only.
+    const bySport = Object.keys(SPORTS).filter((k) => w.bySport[k]).map((k) => `<span class="nw">${letter(k)} ${fmt(w.bySport[k].hours, 1)} h</span>`);
+    totals = w.planned.sessions
+      ? [`<b>${fmt(w.planned.hours, 1)} h</b> planned`, all ? bySport.join(' · ') : `${w.planned.sessions} ${v.sport.noun[w.planned.sessions === 1 ? 0 : 1]}`]
+      : ['Nothing planned'];
+  } else if (all) {
     // Hours, in total and by sport, and a warning if form would drop below −30.
     const bySport = Object.keys(SPORTS).filter((k) => w.bySport[k]).map((k) => `<span class="nw">${letter(k)} ${fmt(w.bySport[k].hours, 1)} h</span>`);
     totals = w.past
@@ -124,7 +130,7 @@ function footer(month, v) {
   const now = ctx.now;
   const prev = addMonths(month, -1);
   const prevPlanned = v.workouts.filter((w) => w.date >= prev && w.date <= monthEnd(prev) && (w.date < now || w.done.length));
-  if (prevPlanned.length) {
+  if (prevPlanned.length && !ctx.planOnly) {
     const done = prevPlanned.filter((w) => w.done.length).length;
     const soFar = monthEnd(prev) >= now ? ' so far' : '';
     lines.push(`${done} of ${prevPlanned.length} planned sessions done${soFar} in ${monthName(prev)}.`);
@@ -138,7 +144,9 @@ function footer(month, v) {
   const fitness = all ? ctx.overall : ctx.sports[v.view];
   const fitnessNow = all ? ctx.overall.now : fitness.fitnessNow;
 
-  if (ahead.length && fitnessNow) {
+  if (ctx.planOnly) {
+    if (inMonth.length) lines.push(`${inMonth.length} ${v.sport.noun[inMonth.length === 1 ? 0 : 1]}, ${fmt(hours, 1)} hours planned.`);
+  } else if (ahead.length && fitnessNow) {
     // Quote month end only when the plan reaches it; otherwise the last planned day.
     const until = lastPlanned >= addDays(end, -7) ? end : lastPlanned;
     let text = `Fitness ${fmt(fitnessNow.fitness)} now, ${fmt(fitness.pointOn(until)?.fitness)} by ${until === end ? 'month end' : shortDate(until)}`;
@@ -266,7 +274,7 @@ async function start() {
     state.data = makeDemoData();
     state.plan = makeDemoPlan(weekStart);
   } else {
-    state.data = store.getCache();
+    state.data = store.isPlanOnly() ? store.planOnlyData() : store.getCache();
     state.plan = store.getPlan();
   }
   render();
