@@ -297,6 +297,7 @@ function legend(el, items) {
       const sw = document.createElement('span');
       sw.className = 'swatch' + (line ? ' line' : '') + (hatch ? ' hatch' : '');
       if (!hatch) sw.style.background = color;
+      else if (color) sw.style.setProperty('--hatch', color);
       item.append(sw, label);
       return item;
     }),
@@ -341,7 +342,8 @@ function renderCharts(m) {
     legend($('legend-load'), [
       ...(m.all ? drawn.sports : [{ label: m.range.calendar ? 'This week' : 'This period', color: cssVar('--series-1') }]),
       { label: prevLabel, color: cssVar('--series-prev') },
-      ...(drawn.planned ? [plannedLegend] : []),
+      // In All sports the planned bars take each sport's colour, so the swatch is neutral.
+      ...(drawn.planned ? [m.all ? { ...plannedLegend, color: cssVar('--text-3') } : plannedLegend] : []),
     ]);
     legend($('legend-volume'), drawVolume(m, hours ? 'hours' : 'distance'));
   }

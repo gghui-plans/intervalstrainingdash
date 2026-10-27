@@ -225,8 +225,11 @@ input {
 .swatch.line { height: 3px; width: 14px; border-radius: 2px; }
 /* Planned load: the chart's hatched bars, in miniature */
 .swatch.hatch {
-  background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--series-1) 75%, transparent) 0 1.5px, transparent 1.5px 3.5px);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--series-1) 55%, transparent);
+  --hatch: var(--series-1);
+  background:
+    repeating-linear-gradient(135deg, color-mix(in oklab, var(--hatch) 90%, transparent) 0 1.5px, transparent 1.5px 3.5px),
+    color-mix(in oklab, var(--hatch) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--hatch) 80%, transparent);
 }
 
 /* Info tips: hover on desktop, tap (focus) on touch */
@@ -579,7 +582,12 @@ textarea {
 .estimate { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .estimate:empty { display: none; }
 .form-error { margin: 0; color: var(--danger); font-size: 0.875rem; }
-.plan-dialog .dialog-actions { padding-bottom: 14px; }
+/* The buttons stay in view while a tall dialog scrolls */
+.plan-dialog .creds-form { margin-bottom: 0; }
+.plan-dialog .dialog-actions {
+  position: sticky; bottom: 0; z-index: 1; background: var(--surface);
+  margin: 0 -20px; padding: 12px 20px 14px; border-top: 1px solid var(--border);
+}
 
 @media (max-width: 640px) {
   .plan { padding: 18px 14px; }

@@ -44,12 +44,15 @@ const barLabel = (m) => (w) => (m.grain === 'day' ? dayLabel(w.from) : shortDate
 const barTitle = (m, w) =>
   w.label ? `${w.label}, ${shortDate(w.from)} – ${shortDate(w.to)}` : m.grain === 'day' ? longDay(w.from) : `Week of ${shortDate(w.from)}`;
 
-// Diagonal lines in the colour on a transparent background: planned, not done.
+// Diagonal lines in the colour on a faint wash of it: planned, not done. The wash
+// keeps the bar's shape readable on a dark background.
 export function hatch(color) {
   const c = document.createElement('canvas');
   c.width = c.height = 8;
   const g = c.getContext('2d');
-  g.strokeStyle = withAlpha(color, 0.7);
+  g.fillStyle = withAlpha(color, 0.16);
+  g.fillRect(0, 0, 8, 8);
+  g.strokeStyle = withAlpha(color, 0.9);
   g.lineWidth = 2;
   g.beginPath();
   for (const k of [-8, 0, 8]) {
@@ -64,9 +67,9 @@ export function hatch(color) {
 const plannedText = (m, w) =>
   `Planned: about ${about(w.plannedLoad)}${w.plannedSessions ? ` (${w.plannedSessions} ${m.sport.noun[w.plannedSessions === 1 ? 0 : 1]})` : ''}`;
 
-const plannedBars = (t) => ({
-  ...bar(hatch(t.s1)),
-  borderColor: withAlpha(t.s1, 0.55),
+const plannedBars = (t, color = t.s1) => ({
+  ...bar(hatch(color)),
+  borderColor: withAlpha(color, 0.8),
   borderWidth: 1.5,
 });
 
@@ -128,13 +131,24 @@ function draw(id, config) {
 
 // Planned load stacks on this period's bars: the 1-week tab's days still to come,
 // and on weekly charts up to two weeks of plan appended after the range. In All
-// sports this period's bars stack by sport. Returns what the legend needs.
+// sports this period's bars, and the planned ones, stack by sport. Returns what the
+// legend needs.
 export function drawLoad(m) {
   const t = theme();
   const bars = [...m.weeks, ...m.plannedWeeks];
   const planned = bars.map((w) => (w.plannedLoad ? Math.round(w.plannedLoad) : null));
   const actual = (f) => bars.map((w) => (w.future || w.label ? null : Math.round(f(w))));
   const keys = m.all ? sportKeys(m.weeks) : [];
+  const plannedKeys = [...Object.keys(SPORTS), 'other'].filter((k) => bars.some((w) => w.plannedBySport?.[k]));
+  const plannedSets = m.all
+    ? plannedKeys.map((k) => ({
+        label: `Planned ${sportLabel(k).toLowerCase()}`,
+        stack: 'this',
+        planned: true,
+        data: bars.map((w) => (w.plannedBySport?.[k] ? Math.round(w.plannedBySport[k]) : null)),
+        ...plannedBars(t, t.sport(k)),
+      }))
+    : [{ label: 'Planned', stack: 'this', planned: true, data: planned, ...plannedBars(t) }];
   const thisPeriod = m.all
     ? keys.map((k, i) => ({
         label: sportLabel(k),
@@ -150,7 +164,7 @@ export function drawLoad(m) {
       datasets: [
         { label: 'Previous period', stack: 'prev', data: bars.map((w, i) => (m.prevWeeks[i] ? Math.round(m.prevWeeks[i].load) : null)), ...bar(t.prev) },
         ...thisPeriod,
-        { label: 'Planned', stack: 'this', planned: true, data: planned, ...plannedBars(t) },
+        ...plannedSets,
       ],
     },
     options: {
@@ -164,6 +178,7 @@ export function drawLoad(m) {
           callbacks: {
             title: (items) => barTitle(m, bars[items[0].dataIndex]),
             label: (c) => {
+              if (c.dataset.planned && m.all) return ` ${c.dataset.label}: about ${about(c.raw)}`;
               if (c.dataset.planned) return ` ${plannedText(m, bars[c.dataIndex])}`;
               if (c.datasetIndex > 0 && m.all) return ` ${c.dataset.label}: ${fmt(c.raw)}`;
               const w = (c.datasetIndex === 0 ? m.prevWeeks : bars)[c.dataIndex];
@@ -172,7 +187,9 @@ export function drawLoad(m) {
             },
             footer: (items) => {
               const w = bars[items[0].dataIndex];
-              return m.all && !w.future && !w.label ? `All sports: ${fmt(w.load)}` : '';
+              if (!m.all) return '';
+              if (!w.future && !w.label) return `All sports: ${fmt(w.load)}`;
+              return w.plannedLoad ? plannedText(m, w) : '';
             },
           },
         },

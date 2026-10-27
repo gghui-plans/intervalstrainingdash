@@ -5,6 +5,7 @@
 import { DAILY_MAX_DAYS, FATIGUE_DAYS, FITNESS_DAYS, SPORTS, WARMUP_DAYS } from './config.js';
 import { addDays, daysBetween, eachDay, startOfWeek, today } from './dates.js';
 import { CALIBRATION_DAYS, calibrate, estimateLoad, forecast, nextRace, weekVerdict } from './plan.js';
+import { defaultTitle } from './text.js';
 
 export const ALL = 'all';
 
@@ -207,7 +208,13 @@ function sportContext(data, key, plan, now) {
   const workouts = plan.workouts
     .filter((w) => w.sport === key)
     .sort(byDate)
-    .map((w) => ({ ...w, estimate: estimateLoad(w, zones, calibration), done: doneOn[w.date] || [] }));
+    .map((w) => ({
+      ...w,
+      // An untitled workout is named from its current details, so the name follows edits.
+      title: w.title || defaultTitle(w, zones),
+      estimate: estimateLoad(w, zones, calibration),
+      done: doneOn[w.date] || [],
+    }));
 
   // A workout planned for today is still to come until a session of this sport is recorded today.
   const pendingToday = !doneOn[now];
@@ -425,8 +432,11 @@ export function buildModel(data, view, range, ctx) {
   const viewWorkouts = all ? ctx.workouts : sc.workouts;
   const plannedOn = (from, to) => {
     const l = viewWorkouts.filter((w) => w.date >= from && w.date <= to && ctx.ahead(w));
+    const plannedBySport = {};
+    for (const w of l) plannedBySport[w.sport] = (plannedBySport[w.sport] || 0) + (w.estimate.load || 0);
     return {
       plannedLoad: l.reduce((s, w) => s + (w.estimate.load || 0), 0),
+      plannedBySport,
       plannedSessions: l.length,
       plannedHours: l.reduce((s, w) => s + w.estimate.minutes, 0) / 60,
     };

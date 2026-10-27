@@ -34,9 +34,9 @@ export const newId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2
 // ---------- Planned load ----------
 
 // Intensity as a fraction of threshold. The fixed parts of an interval session
-// (warm-up, cool-down, recoveries) are easy whatever the target.
-const WARM_INTENSITY = 0.65;
-const RECOVERY_INTENSITY = 0.6;
+// (warm-up, cool-down, recoveries) are easy whatever the target: the middle of the
+// athlete's Z2, or EASY_INTENSITY (about Z2 on a typical five-zone scale) without zones.
+const EASY_INTENSITY = 0.8;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 // The bpm in the middle of heart-rate zone `zone` (1-based). Bounds are the upper bpm
@@ -70,6 +70,11 @@ export function intensity(target, zones) {
   return Number.isFinite(x) ? clamp(x, 0.3, 1.3) : null;
 }
 
+function easyIntensity(zones) {
+  const x = zones.hr.lthr && zones.hr.bounds?.length >= 3 ? zoneMidHr(2, zones.hr) / zones.hr.lthr : null;
+  return Number.isFinite(x) ? clamp(x, 0.6, 0.9) : EASY_INTENSITY;
+}
+
 const segmentLoad = (minutes, i) => (minutes / 60) * i * i * 100;
 
 export function workoutMinutes(w) {
@@ -101,10 +106,10 @@ export function estimateLoad(w, zones, calibration = null) {
   if (i == null) return { load: null, minutes, intensity: null, calibrated: false, missing };
   let raw = segmentLoad(minutes, i);
   if (w.kind === 'intervals') {
+    const easy = easyIntensity(zones);
     raw =
-      segmentLoad((w.warmMin || 0) + (w.coolMin || 0), WARM_INTENSITY) +
-      segmentLoad((w.reps || 0) * (w.workMin || 0), i) +
-      segmentLoad((w.reps || 0) * (w.restMin || 0), RECOVERY_INTENSITY);
+      segmentLoad((w.warmMin || 0) + (w.coolMin || 0) + (w.reps || 0) * (w.restMin || 0), easy) +
+      segmentLoad((w.reps || 0) * (w.workMin || 0), i);
   }
   const cal = calibration?.[factorType(w.target)];
   return { load: raw * (cal?.factor ?? 1), minutes, intensity: i, calibrated: !!cal?.calibrated, missing: null };

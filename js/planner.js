@@ -157,6 +157,9 @@ const wf = $('workout-form');
 let editing = null; // { id, sport, kind, target } while the workout dialog is open
 
 const DEFAULTS = { minutes: 45, reps: 6, workMin: 3, restMin: 2, warmMin: 15, coolMin: 10 };
+// The zone a new workout starts on: easy for continuous, hard for intervals.
+const DEFAULT_ZONE = { steady: 2, intervals: 4 };
+const defaultZone = (kind) => String(Math.min(DEFAULT_ZONE[kind], wf.zone.options.length));
 const zonesFor = (sport) => model().ctx.sports[sport].zones;
 
 function zoneOptions(hr) {
@@ -182,7 +185,8 @@ function openWorkout(id, date) {
   $('workout-sport').innerHTML = Object.entries(SPORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('');
   wf.sport.value = sport;
   wf.date.value = w?.date || date || today();
-  wf.title.value = w?.title || '';
+  // Plans saved before titles were left blank hold the automatic one; blank it again.
+  wf.title.value = w && w.title !== defaultTitle(w, zonesFor(sport)) ? w.title : '';
   for (const k of Object.keys(DEFAULTS)) wf[k].value = w?.[k] || DEFAULTS[k];
   wf.hr.value = w?.target?.type === 'hr' ? w.target.value : '';
   wf.key.checked = !!w?.key;
@@ -199,7 +203,7 @@ function setSport(sport, w = null) {
   if (editing.target === 'pace' && !s.hasPaceZones) editing.target = 'hrZone';
   const zones = zonesFor(sport);
   wf.zone.innerHTML = zoneOptions(zones.hr);
-  wf.zone.value = String(w?.target?.type === 'hrZone' ? w.target.value : 2);
+  wf.zone.value = w?.target?.type === 'hrZone' ? String(w.target.value) : defaultZone(editing.kind);
   wf.pace.value = w?.target?.type === 'pace' ? paceClock(w.target.value, zones.pace.units) : '';
   $('pace-unit').textContent = `/${paceUnit(zones.pace.units)}`;
   $('target-toggle').querySelector('[data-target="pace"]').hidden = !s.hasPaceZones;
@@ -259,9 +263,8 @@ function readWorkout() {
   if (!error && hasTargets(w.sport) && !w.target) {
     error = editing.target === 'pace' ? 'Set a pace like 4:45.' : editing.target === 'hr' ? 'Set a heart rate in bpm.' : 'Pick a zone.';
   }
-  const fallback = defaultTitle(w, zones);
-  wf.title.placeholder = fallback;
-  if (!w.title) w.title = fallback;
+  // A blank title stays blank, so the shown name keeps up with later edits.
+  wf.title.placeholder = defaultTitle(w, zones);
   return { workout: w, error };
 }
 
@@ -461,6 +464,8 @@ function wire() {
   wf.sport.addEventListener('change', () => setSport(wf.sport.value));
   for (const b of document.querySelectorAll('[data-kind]')) {
     b.addEventListener('click', () => {
+      // Follow the kind's default zone unless a zone has been picked by hand.
+      if (wf.zone.value === defaultZone(editing.kind)) wf.zone.value = defaultZone(b.dataset.kind);
       editing.kind = b.dataset.kind;
       syncWorkoutForm();
     });
@@ -497,7 +502,8 @@ function wire() {
     const p = plan();
     const w = p.workouts.find((x) => x.id === editing.id);
     $('workout-dialog').close();
-    savePlan({ ...p, workouts: p.workouts.filter((x) => x.id !== editing.id) }, `Deleted ${w?.title || 'the workout'}.`);
+    const name = w ? w.title || defaultTitle(w, zonesFor(w.sport)) : 'the workout';
+    savePlan({ ...p, workouts: p.workouts.filter((x) => x.id !== editing.id) }, `Deleted ${name}.`);
   });
 
   // Race dialog
